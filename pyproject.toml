@@ -1,0 +1,39 @@
+[tool.pytest.ini_options]
+log_cli = true
+log_cli_level = "DEBUG"
+
+[tool.ruff]
+exclude = [
+    ".venv",
+]
+line-length = 120
+indent-width = 4
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "I", "ARG"]
+ignore = []
+
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["E402"]
+"tests/**/*.py" = ["ARG001","ARG002"]
+
+[tool.ruff.lint.flake8-quotes]
+docstring-quotes = "double"
+
+[tool.pylint.MASTER]
+ignore = [".venv", "tests"]
+enable = ["all"]
+disable = [
+    "W1203", # Not using lazy logging - to be optimized one day
+    "C0114", # Missing module docstring
+    "W0212", # Access to a protected member
+    "R0914", # Too many local variables
+    "C0103", # Invalid name
+    "C0115", # Missing class docstring
+    "C0301", # Line too long
+    "R0902", # Too many instance attributes
+]
+max-line-length = 120

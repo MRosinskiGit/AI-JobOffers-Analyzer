@@ -1,3 +1,4 @@
+import os.path
 import sqlite3
 
 from loguru import logger
@@ -6,14 +7,19 @@ from src_common.common_utils import JobOffer
 
 
 class DatabaseManager:
-    def __init__(self, db_file, table_name):
+    def __init__(self,db_file, table_name):
+
         logger.info("Connecting to database {} with table name {}", db_file, table_name)
         self.table_name = table_name
-        self.db_file = db_file
+        if os.getenv("DB_PATH"):
+            db_path = os.getenv("DB_PATH")
+            self.db_path = os.path.join(db_path, db_file)
+        else:
+            self.db_path = db_file
         """Initialize the DatabaseManager with the database file."""
-        self.conn = sqlite3.connect(self.db_file)
+        self.conn = sqlite3.connect(self.db_path)
         self.create_jobs_database()
-        logger.success(f"Database connected: {self.db_file}")
+        logger.success(f"Database connected: {self.db_path}")
 
     @logger.catch(reraise=True)
     def create_jobs_database(self):

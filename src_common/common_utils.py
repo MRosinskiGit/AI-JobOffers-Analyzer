@@ -1,9 +1,30 @@
 import re
+import sys
 import time
 from datetime import datetime
 
 from loguru import logger
 from pydantic import BaseModel
+
+def configure_logger(logfile=None):
+    logger.remove()
+    logger.add(
+        sys.stdout,
+        colorize=True,
+        level="DEBUG",
+        format=(
+            "<green>{time:HH:mm:ss}</green> "
+            "| <level>{level: <8}</level> "
+            "| <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> "
+            "- <level>{message}</level>"
+        )
+    )
+    if logfile:
+        logger.add(
+            logfile,
+            rotation="100 MB",
+            level="TRACE",
+        )
 
 
 def simplify_text(text):

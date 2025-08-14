@@ -15,8 +15,9 @@ from openai import OpenAI
 
 from database import DatabaseManager
 from src_async.scraping_async import extract_all_jobs
+from src_common.common_utils import configure_logger
 
-logger.add("logs/log_async_main_{time}.log", level="TRACE", rotation="100 MB")
+configure_logger("logs/log_async_main_{time}.log")
 
 load_dotenv()
 logger.info("Initializing OpenAI model with API key from environment variable.")

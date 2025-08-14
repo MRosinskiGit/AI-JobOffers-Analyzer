@@ -82,7 +82,8 @@ class DatabaseManager:
             cursor = self.conn.cursor()
             cursor.execute(sql_search_jobs, ("%" + job_offer.url + "%",))
             results = cursor.fetchall()
-            logger.debug("Search results: {}", results)
+            logger.debug("Found matching results: {}", len(results))
+            logger.trace("Search results: {}", results)
             return results
         except sqlite3.Error as e:
             logger.error(f"Error searching jobs: {e}")

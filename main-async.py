@@ -1,9 +1,11 @@
 # ruff : noqa: E501
 import asyncio
 import concurrent.futures
+import datetime
 import json
 import os
 import re
+import sys
 import threading
 
 from dotenv import load_dotenv
@@ -53,13 +55,14 @@ def clean_deepseek_response(response):
 
 DB_NAME = "jobs.db"
 TABLE_NAME = "job_offers_api"
-db = DatabaseManager(DB_NAME, TABLE_NAME)
+RELPATH = "./db"
+db = DatabaseManager(DB_NAME, TABLE_NAME, RELPATH)
 
 all_jobs = asyncio.run(extract_all_jobs())
 
 
 def process_job(data):
-    db = DatabaseManager(DB_NAME, TABLE_NAME)
+    db = DatabaseManager(DB_NAME, TABLE_NAME, RELPATH)
     if len(db.search_jobs(data)) != 0:
         logger.warning("Job already exists in the database: {}", data.name)
         return
@@ -129,3 +132,11 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
             logger.error("Job processing generated an exception for {}: {}", res, exc)
         else:
             logger.success("All jobs processed and stored in the database")
+
+logger.info("Extracting jobs for today...")
+todays_job = db.extract_jobs_for_a_date(datetime.date.today())
+
+if not todays_job:
+    logger.warning("No jobs found for today.")
+    sys.exit(0)
+db.generate_report_html(todays_job)

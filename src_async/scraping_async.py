@@ -4,15 +4,16 @@ from typing import List
 from loguru import logger
 from playwright.async_api import async_playwright
 
-from src_async.sites.justjoinit_async import JustJoinIt
 from src_common.common_utils import JobOffer
+
+from .sites.justjoinit_async import JustJoinIt
 
 
 @logger.catch(reraise=True)
 async def extract_all_jobs() -> List[JobOffer]:
     async with async_playwright() as p:
         logger.info("Starting Playwright to extract job URLs...")
-        browser = await p.chromium.launch(headless=True)
+        browser = await p.chromium.launch(headless=False)
         all_jobs = []
 
         # context = await browser.new_context()

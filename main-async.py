@@ -15,7 +15,7 @@ from openai import OpenAI
 
 from database import DatabaseManager
 from src_async.scraping_async import extract_all_jobs
-from src_common.common_utils import configure_logger
+from src_common.common_utils import JobOffer, configure_logger
 
 configure_logger("logs/log_async_main_{time}.log")
 
@@ -62,6 +62,55 @@ db = DatabaseManager(DB_NAME, TABLE_NAME, RELPATH)
 all_jobs = asyncio.run(extract_all_jobs())
 
 
+def build_prompt(job: JobOffer):
+    return [
+        {  # rdzeń: tylko JSON PL
+            "role": "system",
+            "content": (
+                "Jesteś narzędziem do oceny dopasowania ofert pracy IT. "
+                "Zwracasz WYŁĄCZNIE poprawny JSON w UTF-8, bez markdownu i bez wyjaśniania rozumowania. "
+                "Odpowiadasz po polsku."
+            ),
+        },
+        {  # schema i definicje
+            "role": "system",
+            "content": (
+                "Wyjście — dokładnie taki JSON:\n"
+                '{ "ocena_oferty": <int 0-100>, '
+                '"techstack": ["...", "..."], '
+                '"braki": ["...", "..."], '
+                '"opinia": "max 5 krótkich zdań" }\n'
+                "techstack: 1–20 unikalnych technologii z ogłoszenia, małymi literami; "
+                "braki: wymagania z ogłoszenia, których kandydat nie spełnia."
+            ),
+        },
+        {  # profil kandydata (skondensowany)
+            "role": "system",
+            "content": (os.getenv("PROFILE")),
+        },
+        {  # normalizacja/synonimy
+            "role": "system",
+            "content": (
+                "Normalizacja techstack (zapisuj małymi literami): "
+                '"azure devops pipelines|azure pipelines|ado pipelines|azure devops ci/cd"→"azure devops"; '
+                '"qa automation|sdet|automated testing"→"test automation"; '
+                '"http api|web api"→"rest api"; '
+                '"hardware-in-the-loop|software-in-the-loop"→"hil/sil"; '
+                '"python backend|python scripting"→"python"; '
+                '"continuous integration|continuous delivery"→"ci/cd".'
+            ),
+        },
+        {  # scoring i reguły (skrócone)
+            "role": "system",
+            "content": (os.getenv("EXPECTATIONS")),
+        },
+        {  # wejście użytkownika
+            "role": "user",
+            "content": f"Pełny tekst ogłoszenia dla {job.url}:\n{job.description}",
+        },
+    ]
+
+
 def process_job(data):
     db = DatabaseManager(DB_NAME, TABLE_NAME, RELPATH)
     if len(db.search_jobs(data)) != 0:
@@ -70,40 +119,9 @@ def process_job(data):
     logger.info("Processing job: {}", data.name)
     response = model.chat.completions.create(
         model="deepseek-reasoner",
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "Jesteś narzędziem do oceny dopasowania ofert pracy IT. "
-                    "Zawsze zwracasz WYŁĄCZNIE poprawny JSON w UTF-8, bez markdownu, komentarzy "
-                    "i bez wyjaśniania rozumowania. Odpowiadasz po polsku."
-                ),
-            },
-            {
-                "role": "user",
-                "content": f"""
-    {os.getenv("CANDIDATE_PROMPT")}
-
-    WEJŚCIE:
-    OFERTA:
-    {data.description}
-
-    ŹRÓDŁO:
-    {data.url}
-
-    WYJŚCIE (TYLKO JSON; dokładnie te klucze):
-    {{
-      "opinia": "maks 5 zdań; zwięzłe plusy i minusy; wskaż braki.",
-      "ocena_oferty": 0,
-      "dopasowanie_kandydata": 0,
-      "braki": [],
-      "techstack": [],
-      "zrodlo": "{data.url}"
-    }}
-    """,
-            },
-        ],
-        temperature=0.1,
+        messages=build_prompt(data),
+        temperature=0.0,
+        top_p=1.0,
         max_tokens=10000,
         response_format={"type": "json_object"},
     )
@@ -135,9 +153,9 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
             logger.success("All jobs processed and stored in the database")
 
 logger.info("Extracting jobs for today...")
-todays_job = db.extract_jobs_for_a_date(datetime.date.today())
+todays_jobs = db.extract_jobs_for_a_date(datetime.date.today())
 
-if not todays_job:
+if not todays_jobs:
     logger.warning("No jobs found for today.")
     sys.exit(0)
-db.generate_report_html(todays_job)
+db.generate_report_html(todays_jobs)

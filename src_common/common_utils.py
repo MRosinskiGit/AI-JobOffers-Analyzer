@@ -6,6 +6,7 @@ from datetime import datetime
 from loguru import logger
 from pydantic import BaseModel
 
+
 def configure_logger(logfile=None):
     logger.remove()
     logger.add(
@@ -17,7 +18,7 @@ def configure_logger(logfile=None):
             "| <level>{level: <8}</level> "
             "| <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> "
             "- <level>{message}</level>"
-        )
+        ),
     )
     if logfile:
         logger.add(

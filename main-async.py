@@ -77,6 +77,7 @@ def build_prompt(job: JobOffer):
             "content": (
                 "Wyjście — dokładnie taki JSON:\n"
                 '{ "ocena_oferty": <int 0-100>, '
+                '"dopasowanie_kandydata": <int 0-100>, '
                 '"techstack": ["...", "..."], '
                 '"braki": ["...", "..."], '
                 '"opinia": "max 5 krótkich zdań" }\n'

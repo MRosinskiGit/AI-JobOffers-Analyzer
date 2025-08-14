@@ -66,58 +66,58 @@ def process_job(data):
     if len(db.search_jobs(data)) != 0:
         logger.warning("Job already exists in the database: {}", data.name)
         return
-    logger.info("Processing job: {}", data.name)
-    response = model.chat.completions.create(
-        model="deepseek-reasoner",
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "Jesteś narzędziem do oceny dopasowania ofert pracy IT. "
-                    "Zawsze zwracasz WYŁĄCZNIE poprawny JSON w UTF-8, bez markdownu, komentarzy "
-                    "i bez wyjaśniania rozumowania. Odpowiadasz po polsku."
-                ),
-            },
-            {
-                "role": "user",
-                "content": f"""
-    {os.getenv("CANDIDATE_PROMPT")}
-
-    WEJŚCIE:
-    OFERTA:
-    {data.description}
-
-    ŹRÓDŁO:
-    {data.url}
-
-    WYJŚCIE (TYLKO JSON; dokładnie te klucze):
-    {{
-      "opinia": "maks 5 zdań; zwięzłe plusy i minusy; wskaż braki.",
-      "ocena_oferty": 0,
-      "dopasowanie_kandydata": 0,
-      "braki": [],
-      "techstack": [],
-      "zrodlo": "{data.url}"
-    }}
-    """,
-            },
-        ],
-        temperature=0.1,
-        max_tokens=10000,
-        response_format={"type": "json_object"},
-    )
-
-    logger.success("Response for URL: {}", data.url)
-    logger.debug(response.choices[0].message.content)
-    response_formatted = clean_deepseek_response(str(response.choices[0].message.content))
-    offer_rating, candidate_rating = extract_ratings(response_formatted)
-    data.analysis = str(response_formatted)
-    if offer_rating:
-        data.offer_rating = offer_rating
-    if candidate_rating:
-        data.candidate_rating = candidate_rating
-    with db_access_lock:
-        db.insert_job_offer(data)
+    # logger.info("Processing job: {}", data.name)
+    # response = model.chat.completions.create(
+    #     model="deepseek-reasoner",
+    #     messages=[
+    #         {
+    #             "role": "system",
+    #             "content": (
+    #                 "Jesteś narzędziem do oceny dopasowania ofert pracy IT. "
+    #                 "Zawsze zwracasz WYŁĄCZNIE poprawny JSON w UTF-8, bez markdownu, komentarzy "
+    #                 "i bez wyjaśniania rozumowania. Odpowiadasz po polsku."
+    #             ),
+    #         },
+    #         {
+    #             "role": "user",
+    #             "content": f"""
+    # {os.getenv("CANDIDATE_PROMPT")}
+    #
+    # WEJŚCIE:
+    # OFERTA:
+    # {data.description}
+    #
+    # ŹRÓDŁO:
+    # {data.url}
+    #
+    # WYJŚCIE (TYLKO JSON; dokładnie te klucze):
+    # {{
+    #   "opinia": "maks 5 zdań; zwięzłe plusy i minusy; wskaż braki.",
+    #   "ocena_oferty": 0,
+    #   "dopasowanie_kandydata": 0,
+    #   "braki": [],
+    #   "techstack": [],
+    #   "zrodlo": "{data.url}"
+    # }}
+    # """,
+    #         },
+    #     ],
+    #     temperature=0.1,
+    #     max_tokens=10000,
+    #     response_format={"type": "json_object"},
+    # )
+    #
+    # logger.success("Response for URL: {}", data.url)
+    # logger.debug(response.choices[0].message.content)
+    # response_formatted = clean_deepseek_response(str(response.choices[0].message.content))
+    # offer_rating, candidate_rating = extract_ratings(response_formatted)
+    # data.analysis = str(response_formatted)
+    # if offer_rating:
+    #     data.offer_rating = offer_rating
+    # if candidate_rating:
+    #     data.candidate_rating = candidate_rating
+    # with db_access_lock:
+    #     db.insert_job_offer(data)
     return data
 
 
@@ -133,10 +133,10 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
         else:
             logger.success("All jobs processed and stored in the database")
 
-logger.info("Extracting jobs for today...")
-todays_job = db.extract_jobs_for_a_date(datetime.date.today())
-
-if not todays_job:
-    logger.warning("No jobs found for today.")
-    sys.exit(0)
-db.generate_report_html(todays_job)
+# logger.info("Extracting jobs for today...")
+# todays_job = db.extract_jobs_for_a_date(datetime.date.today())
+#
+# if not todays_job:
+#     logger.warning("No jobs found for today.")
+#     sys.exit(0)
+# db.generate_report_html(todays_job)

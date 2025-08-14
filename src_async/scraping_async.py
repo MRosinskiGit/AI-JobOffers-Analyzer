@@ -13,7 +13,7 @@ from .sites.justjoinit_async import JustJoinIt
 async def extract_all_jobs() -> List[JobOffer]:
     async with async_playwright() as p:
         logger.info("Starting Playwright to extract job URLs...")
-        browser = await p.chromium.launch(headless=False)
+        browser = await p.chromium.launch(headless=True)
         all_jobs = []
 
         # context = await browser.new_context()

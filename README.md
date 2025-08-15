@@ -1,6 +1,6 @@
 # AI Job Offers Scraper
 
-This project is for personal use, but I share the code if someone needs it.
+This project is for personal use, but I share the code if someone needs it. In a meantime I'm cleaning up the code and implementing more sites to track. It's more like proof of concept, but it works well with jenkins.
 
 ## Requirements
 - Python 3.11+

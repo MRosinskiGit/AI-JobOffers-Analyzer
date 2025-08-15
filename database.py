@@ -1,8 +1,11 @@
 import datetime
+import os
 import os.path
 import sqlite3
+from html import escape
 
 from loguru import logger
+from weasyprint import HTML
 
 from src_common.common_utils import JobOffer
 
@@ -124,6 +127,7 @@ class DatabaseManager:
         logger.info("Extracted %d jobs for date: %s", len(rows), day)
         return rows
 
+    @logger.catch()
     def generate_report_html(self, jobs: list[tuple], output_path="./reports") -> bool:
         os.makedirs(output_path, exist_ok=True)
         report_file = os.path.join(output_path, f"report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.html")
@@ -152,3 +156,29 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error generating report: {e}")
             return False
+
+    @logger.catch()
+    def generate_report_pdf(self, jobs, output_path="./reports") -> bool:
+        os.makedirs(output_path, exist_ok=True)
+        pdf_file = os.path.join(output_path, f"report_{datetime.datetime.now():%Y%m%d_%H%M%S}.pdf")
+        # ruff: noqa: E501 off
+        parts = [
+            "<html><head><meta charset='utf-8'><title>Job Offers Report</title>",
+            "<style>table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:4px;font-size:12px}th{background:#2F5597;color:#fff}</style>",
+            "</head><body><h1>Job Offers Report</h1><table>",
+            "<tr><th>ID</th><th>Source</th><th>Name</th><th>URL</th><th>Description</th><th>Analysis</th><th>Offer Rating</th><th>Candidate Rating</th><th>Added Date</th></tr>",
+        ]
+        # ruff: noqa: E501 on
+        for job in jobs:
+            parts.append("<tr>")
+            for idx, item in enumerate(job):
+                val = "" if item is None else escape(str(item))
+                if idx == 3 and val:
+                    parts.append(f"<td><a href='{val}'>{val}</a></td>")
+                else:
+                    parts.append(f"<td>{val}</td>")
+            parts.append("</tr>")
+        parts.append("</table></body></html>")
+
+        HTML(string="".join(parts)).write_pdf(pdf_file)
+        return True

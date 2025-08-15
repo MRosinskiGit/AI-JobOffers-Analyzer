@@ -150,13 +150,19 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
             data = future.result()
         except Exception as exc:
             logger.error("Job processing generated an exception for {}: {}", res, exc)
-        else:
-            logger.success("All jobs processed and stored in the database")
+    else:
+        logger.success("All jobs processed and stored in the database")
 
 logger.info("Extracting jobs for today...")
 todays_jobs = db.extract_jobs_for_a_date(datetime.date.today())
 
+
 if not todays_jobs:
     logger.warning("No jobs found for today.")
     sys.exit(0)
+
+logger.info("Generating HTML report for today's jobs...")
 db.generate_report_html(todays_jobs)
+
+logger.info("Generating PDF report for today's jobs...")
+db.generate_report_pdf(todays_jobs)

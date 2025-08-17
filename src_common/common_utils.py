@@ -3,8 +3,14 @@ import sys
 import time
 from datetime import datetime
 
+import tomllib
 from loguru import logger
 from pydantic import BaseModel
+
+
+def __load_config():
+    with open("./pyproject.toml", "rb") as f:
+        return tomllib.load(f)
 
 
 def configure_logger(logfile=None):
@@ -107,3 +113,6 @@ class JobOffer(BaseModel):
     analysis: str = ""
     offer_rating: int = 0
     candidate_rating: int = 0
+
+
+global_config = __load_config()

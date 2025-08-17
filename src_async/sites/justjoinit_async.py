@@ -1,8 +1,8 @@
 import asyncio
 
 from loguru import logger
+from playwright.async_api import Browser, BrowserContext, async_playwright
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
-from playwright.async_api import async_playwright
 
 from src_async.sites.common_async import PageOperationsAsync
 
@@ -10,20 +10,21 @@ from src_async.sites.common_async import PageOperationsAsync
 class JustJoinIt(PageOperationsAsync):
     core = r"https://justjoin.it"
 
-    def __init__(self, Context, job_list_url, name="JustJoinIt"):
-        self.context = Context
+    def __init__(self, browser: Browser, job_list_url, name="JustJoinIt"):
+        self.browser = browser
+        self.context: BrowserContext = ...
         self.name = name
         self.url = job_list_url
         self.headless = False  # Set to True for headless mode
         logger.success("Initialized JustJoinIt Scraper for name: {}, url: {}", self.name, self.url)
 
-    async def url_extractor_pattern(self, page):
+    async def _url_extractor_pattern(self, page):
         urls_parts = await super().scroll_and_collect(
             page, collect_locator="a.offer-card", extraction_data_fun=lambda el: el.get_attribute("href")
         )
         return [self.core + url_part for url_part in urls_parts if url_part is not None]
 
-    async def job_description_extractor_pattern(self, page) -> None | str:
+    async def _job_description_extractor_pattern(self, page) -> None | str:
         """
         Extracts job description and tech stack from the page.
         """
@@ -39,24 +40,25 @@ class JustJoinIt(PageOperationsAsync):
         except PlaywrightTimeoutError:
             return None
 
-    @logger.catch(reraise=False)
+    @logger.catch(reraise=False, default=[])
     async def perform_full_extraction(self):
         urls = await super().extract_jobs_urls(self.url)
+        if not urls:
+            logger.warning("No URLs extracted")
+            return []
         jobs_data = await super().extract_jobs_details_from_urls(urls)
-        return jobs_data
+        return jobs_data or []
 
 
 async def extract_asynchronious_jjit():
     async with async_playwright() as p:
         logger.info("Starting Playwright to extract job URLs from JJIT...")
         browser = await p.chromium.launch(headless=False)
-        context = await browser.new_context()
-
-        JJIT = JustJoinIt(
-            context,
+        async with JustJoinIt(
+            browser,
             r"https://justjoin.it/job-offers/remote/testing?employment-type=b2b,permanent&workplace=hybrid&working-hours=full-time&keyword=python&orderBy=DESC&sortBy=published",
-        )
-        offers = await JJIT.perform_full_extraction()
+        ) as JJIT:
+            offers = await JJIT.perform_full_extraction()
         return offers
 
 

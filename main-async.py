@@ -15,7 +15,7 @@ from openai import OpenAI
 
 from database import DatabaseManager
 from src_async.scraping_async import extract_all_jobs
-from src_common.common_utils import JobOffer, configure_logger
+from src_common.common_utils import JobOffer, configure_logger, global_config
 
 configure_logger("logs/log_async_main_{time}.log")
 
@@ -142,7 +142,7 @@ def process_job(data):
 
 
 db_access_lock = threading.Lock()
-with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
+with concurrent.futures.ThreadPoolExecutor(max_workers=global_config["MAX_REQUESTS_WORKERS"]) as executor:
     all_futures = {executor.submit(process_job, data): data for data in all_jobs}
     for future in concurrent.futures.as_completed(all_futures):
         res = all_futures[future]

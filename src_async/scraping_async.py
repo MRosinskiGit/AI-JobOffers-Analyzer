@@ -9,83 +9,86 @@ from src_async.sites.pracujpl_async import PracujPl
 from src_common.common_utils import JobOffer
 
 
-@logger.catch(reraise=True)
-async def extract_all_jobs() -> List[JobOffer]:
-    async with async_playwright() as p:
-        logger.info("Starting Playwright to extract job URLs...")
-        browser = await p.chromium.launch(headless=True)
-        all_jobs = []
+def extract_all_jobs() -> List[JobOffer]:
+    """
+    Asynchronously extracts job offers from multiple job sites using Playwright.
 
-        # context = await browser.new_context()
-        # hexagon = Hexagon(context)
-        # hexagon_jobs = await hexagon.extract_joboffers_objects()
-        # for job in hexagon_jobs:
-        #     if not isinstance(job, JobOffer):
-        #         logger.warning(f"Skipping non-JobOffer object: {job}")
-        #         continue
-        #
-        #     all_jobs.append(job)
-        # await context.close()
+    This function launches a headless Chromium browser and collects job offers from several sources:
+    - Just Join It (multiple categories)
+    - Pracuj.pl
+    The function can be extended to support more job sites.
 
-        # Just Join It for testing
-        url = "https://justjoin.it/job-offers/remote/testing?employment-type=b2b,permanent&workplace=hybrid&working-hours=full-time&keyword=python&orderBy=DESC&sortBy=published"
-        async with JustJoinIt(browser, url, name="JustJoinIt-testing") as jjit:
-            jjit_jobs = await jjit.perform_full_extraction()
-            for job in jjit_jobs:
-                if not isinstance(job, JobOffer):
-                    logger.warning(f"Skipping non-JobOffer object: {job}")
-                    continue
-                all_jobs.append(job)
+    Returns:
+        List[JobOffer]: List of all extracted job offers.
+    """
 
-        # Just Join It for development
-        url = r"https://justjoin.it/job-offers/remote/python?employment-type=b2b,permanent&experience-level=junior,mid&keyword=python&workplace=hybrid&working-hours=full-time&orderBy=DESC&sortBy=published"
-        async with JustJoinIt(browser, url, name="JustJoinIt-development") as jjit:
-            jjit_jobs = await jjit.perform_full_extraction()
-            for job in jjit_jobs:
-                if not isinstance(job, JobOffer):
-                    logger.warning(f"Skipping non-JobOffer object: {job}")
-                    continue
-                all_jobs.append(job)
+    async def _extract() -> List[JobOffer]:
+        async with async_playwright() as p:
+            logger.info("Starting Playwright to extract job URLs...")
+            browser = await p.chromium.launch(headless=True)
+            all_jobs: List[JobOffer] = []
 
-        # Just Join It for development
-        url = r"https://justjoin.it/job-offers/remote/devops?employment-type=b2b,permanent&experience-level=junior,mid&workplace=hybrid&working-hours=full-time&keyword=python&orderBy=DESC&sortBy=published"
+            # Just Join It for testing
+            url = "https://justjoin.it/job-offers/remote/testing?employment-type=b2b,permanent&workplace=hybrid&working-hours=full-time&keyword=python&orderBy=DESC&sortBy=published"
+            async with JustJoinIt(browser, url, name="JustJoinIt-testing") as jjit:
+                jjit_jobs = await jjit.perform_full_extraction()
+                for jjit_job in jjit_jobs:
+                    if not isinstance(jjit_job, JobOffer):
+                        logger.warning(f"Skipping non-JobOffer object: {jjit_job}")
+                        continue
+                    all_jobs.append(jjit_job)
 
-        async with JustJoinIt(browser, url, name="JustJoinIt-devops") as jjit:
-            jjit_jobs = await jjit.perform_full_extraction()
+            # Just Join It for development
+            url = r"https://justjoin.it/job-offers/remote/python?employment-type=b2b,permanent&experience-level=junior,mid&keyword=python&workplace=hybrid&working-hours=full-time&orderBy=DESC&sortBy=published"
+            async with JustJoinIt(browser, url, name="JustJoinIt-development") as jjit:
+                jjit_jobs = await jjit.perform_full_extraction()
+                for jjit_job in jjit_jobs:
+                    if not isinstance(jjit_job, JobOffer):
+                        logger.warning(f"Skipping non-JobOffer object: {jjit_job}")
+                        continue
+                    all_jobs.append(jjit_job)
 
-            for job in jjit_jobs:
-                if not isinstance(job, JobOffer):
-                    logger.warning(f"Skipping non-JobOffer object: {job}")
-                    continue
-                all_jobs.append(job)
+            # Just Join It for development
+            url = r"https://justjoin.it/job-offers/remote/devops?employment-type=b2b,permanent&experience-level=junior,mid&workplace=hybrid&working-hours=full-time&keyword=python&orderBy=DESC&sortBy=published"
 
-        # Just Join It for development
-        url = r"https://justjoin.it/job-offers/remote/ai?employment-type=b2b,permanent&experience-level=junior,mid&workplace=hybrid&working-hours=full-time&keyword=python&orderBy=DESC&sortBy=published"
+            async with JustJoinIt(browser, url, name="JustJoinIt-devops") as jjit:
+                jjit_jobs = await jjit.perform_full_extraction()
 
-        async with JustJoinIt(browser, url, name="JustJoinIt-ml") as jjit:
-            jjit_jobs = await jjit.perform_full_extraction()
-            for job in jjit_jobs:
-                if not isinstance(job, JobOffer):
-                    logger.warning(f"Skipping non-JobOffer object: {job}")
-                    continue
-                all_jobs.append(job)
+                for jjit_job in jjit_jobs:
+                    if not isinstance(jjit_job, JobOffer):
+                        logger.warning(f"Skipping non-JobOffer object: {jjit_job}")
+                        continue
+                    all_jobs.append(jjit_job)
 
-        # Pracuj.pl
-        url = r"https://it.pracuj.pl/praca/python;kw?sc=0&wm=hybrid%2Chome-office&itth=37"
-        async with PracujPl(browser, url) as ppl:
-            ppl_jobs = await ppl.perform_full_extraction()
-            for job in ppl_jobs:
-                if not isinstance(job, JobOffer):
-                    logger.warning(f"Skipping non-JobOffer object: {job}")
-                    continue
-                all_jobs.append(job)
+            # Just Join It for development
+            url = r"https://justjoin.it/job-offers/remote/ai?employment-type=b2b,permanent&experience-level=junior,mid&workplace=hybrid&working-hours=full-time&keyword=python&orderBy=DESC&sortBy=published"
 
-        logger.success("Finished extracting All jobs.")
-        return all_jobs
+            async with JustJoinIt(browser, url, name="JustJoinIt-ml") as jjit:
+                jjit_jobs = await jjit.perform_full_extraction()
+                for jjit_job in jjit_jobs:
+                    if not isinstance(jjit_job, JobOffer):
+                        logger.warning(f"Skipping non-JobOffer object: {jjit_job}")
+                        continue
+                    all_jobs.append(jjit_job)
+
+            # Pracuj.pl
+            url = r"https://it.pracuj.pl/praca/python;kw?sc=0&wm=hybrid%2Chome-office&itth=37"
+            async with PracujPl(browser, url) as ppl:
+                ppl_jobs = await ppl.perform_full_extraction()
+                for ppl_job in ppl_jobs:
+                    if not isinstance(ppl_job, JobOffer):
+                        logger.warning(f"Skipping non-JobOffer object: {ppl_job}")
+                        continue
+                    all_jobs.append(ppl_job)
+
+            logger.success("Finished extracting All jobs.")
+            return all_jobs
+
+    return asyncio.run(_extract())
 
 
 if __name__ == "__main__":
     logger.info("Starting asynchronous extraction of job offers from JustJoinIt...")
-    jobs = asyncio.run(extract_all_jobs())
+    jobs: List[JobOffer] = extract_all_jobs()
     for job in jobs:
         logger.info(f"Job URL: {job.url}\nName: {job.name}")

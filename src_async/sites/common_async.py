@@ -1,8 +1,9 @@
 import asyncio
 import datetime
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Awaitable, Callable, Union
+from typing import Awaitable, Callable, List, Optional, Tuple, Union
 
 from loguru import logger
 from playwright._impl._errors import TargetClosedError
@@ -10,50 +11,67 @@ from playwright.async_api import Browser, BrowserContext, Page
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from src_common.common_utils import JobOffer, global_config, simplify_text
+from src_common.database import DatabaseManager
 
 
 class PageOperationsAsync(ABC):
-    cookie_accept_text = "Accept All"
+    """
+    Abstract base class for asynchronous page operations using Playwright.
+    Provides methods for scraping job offers, handling browser context, and utility functions for scrolling and
+    collecting data.
+    """
 
-    def __init__(self, browser: Browser, name: str):
+    cookie_accept_text: str = "Accept All"
+
+    def __init__(self, browser: Browser, name: str) -> None:
+        """
+        Initialize the PageOperationsAsync instance.
+        Args:
+            browser (Browser): Playwright browser instance.
+            name (str): Name of the job site/source.
+        """
         self.browser: Browser = browser
         self.context: BrowserContext = ...
         self.page: Page = ...
         self.name: str = name
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "PageOperationsAsync":
+        """
+        Async context manager entry. Creates a new browser context.
+        Returns:
+            PageOperationsAsync: Self instance with initialized context.
+        """
         self.context = await self.browser.new_context()
         return self
 
-    async def __aexit__(self, exc_type, exc, tb):
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        """
+        Async context manager exit. Closes the browser context.
+        """
         if self.context:
             await self.context.close()
 
-    async def restart_context(self):
+    async def restart_context(self) -> None:
         """
         Restarts the browser context by closing the current context and creating a new one.
-
-        This method ensures that the browser context is reset, which can be useful for clearing
-        session data, cookies, or other stateful information. It handles exceptions during the
-        context closure and guarantees that a new context is created regardless of any errors.
-
-        Logs:
-            - Info: Indicates the attempt to restart the browser context.
-            - Exception: Logs any unexpected exceptions that occur during the context closure.
-
-        Raises:
-            Any exceptions raised during the creation of a new browser context.
+        Handles exceptions during context closure and guarantees a new context is created.
         """
         try:
             logger.info("Attempting to restart browser context...")
             await self.context.close()
-        except Exception as e:
-            logger.exception("Unexpected exception: {}", e)
+        except TargetClosedError as e:
+            logger.exception("TargetClosedError exception: {}", e)
         finally:
             self.context = await self.browser.new_context()
             logger.success("Context restarted")
 
-    async def scroll_to_the_bottom(self, page, pause_time=2000):
+    async def scroll_to_the_bottom(self, page: Page, pause_time: int = 2000) -> None:
+        """
+        Scrolls to the bottom of the page, pausing between scrolls.
+        Args:
+            page (Page): Playwright page object.
+            pause_time (int): Time to wait between scrolls in milliseconds.
+        """
         while True:
             curr_height = await page.evaluate("window.scrollY")
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
@@ -63,10 +81,27 @@ class PageOperationsAsync(ABC):
                 break
 
     @staticmethod
-    async def scroll_and_collect(page, collect_locator, extraction_data_fun, scroll_by=400, wait_between=250):
+    async def scroll_and_collect(
+        page: Page,
+        collect_locator: str,
+        extraction_data_fun: Callable[[Page], Awaitable[Optional[str]]],
+        scroll_by: int = 400,
+        wait_between: int = 250,
+    ) -> List[str]:
+        """
+        Scrolls the page and collects data using the provided locator and extraction function.
+        Args:
+            page (Page): Playwright page object.
+            collect_locator (str): Locator string for elements to collect.
+            extraction_data_fun (Callable): Async function to extract data from each element.
+            scroll_by (int): Amount to scroll by each iteration.
+            wait_between (int): Time to wait between scrolls in milliseconds.
+        Returns:
+            List[str]: List of unique extracted data strings.
+        """
         logger.debug("Starting scroll and collect operation")
         scrollstart = 0
-        extracted_data = []
+        extracted_data: List[str] = []
         while True:
             curr_height = await page.evaluate("window.scrollY")
             all_locators = page.locator(collect_locator)
@@ -89,12 +124,19 @@ class PageOperationsAsync(ABC):
         return all_urls
 
     @logger.catch()
-    async def extract_jobs_urls(self, url: Union[str, list[str]]) -> list[str]:
+    async def extract_jobs_urls(self, url: Union[str, List[str]]) -> List[str]:
+        """
+        Asynchronously extracts job offer URLs from one or more pages.
+        Args:
+            url (Union[str, List[str]]): Single URL or list of URLs to extract job offers from.
+        Returns:
+            List[str]: List of extracted job offer URLs.
+        """
         semaphore = asyncio.Semaphore(global_config["MAX_ASYNC_PLAYWRIGHT_WORKERS"])
         if isinstance(url, str):
             url = [url]
 
-        async def __extract_urls(__url):
+        async def __extract_urls(__url: str) -> Optional[List[str]]:
             async with semaphore:
                 logger.info("Extracting Job Offers URLs from {}", __url)
                 page = await self.context.new_page()
@@ -114,7 +156,7 @@ class PageOperationsAsync(ABC):
                     await page.close()
 
         results = await asyncio.gather(*(__extract_urls(u) for u in url), return_exceptions=True)
-        urls = []
+        urls: List[str] = []
         for r in results:
             if isinstance(r, Exception):
                 logger.error("Failed to extract URLs: {}", r)
@@ -124,26 +166,66 @@ class PageOperationsAsync(ABC):
         return urls
 
     @abstractmethod
-    async def _url_extractor_pattern(self, page: Page) -> list[str]:
+    async def _url_extractor_pattern(self, page: Page) -> List[str]:
         """
         Abstract method to extract list of job URLs from a page.
-        :param page: Async Playwright Page object.
-        :return:
-            List of job URLs extracted from the page.
+        Args:
+            page (Page): Async Playwright Page object.
+        Returns:
+            List[str]: List of job URLs extracted from the page.
         """
-        pass
 
-    # TODO CLEAN    THAT      PART
+    def filter_only_not_analyzed_urls(self, urls: List[str]) -> List[str]:
+        """
+        Filters out URLs that have already been analyzed.
+        This method should be implemented in subclasses to provide specific filtering logic.
+        Returns:
+            List[str]: List of URLs that have not been analyzed yet.
+        """
+        logger.info("Filtering URLs that have not been analyzed yet")
+        DB_NAME = os.getenv("DB_NAME")
+        TABLE_NAME = os.getenv("TABLE_NAME")
+        RELPATH = os.getenv("RELPATH")
+        db = DatabaseManager(DB_NAME, TABLE_NAME, RELPATH)
+        filtered_urls: List[str] = []
+        for url in urls:
+            job_obj = JobOffer(
+                name="",
+                date=datetime.datetime.now(),
+                source="",
+                url=url,
+                description="",
+            )
+            if not len(db.search_jobs(job_obj)):
+                filtered_urls.append(job_obj.url)
+        logger.success("Filtered URLs. Total: {} out of {}", len(filtered_urls), len(urls))
+        return filtered_urls
+
     @logger.catch(reraise=False)
     async def extract_jobs_details_from_urls(
-        self, urls, max_concurrency: int = global_config["MAX_ASYNC_PLAYWRIGHT_WORKERS"]
-    ):
+        self, urls: List[str], max_concurrency: int = global_config["MAX_ASYNC_PLAYWRIGHT_WORKERS"]
+    ) -> List[JobOffer]:
+        """
+        Asynchronously extracts job details from a list of job offer URLs using Playwright.
+        Args:
+            urls (List[str]): List of job offer URLs to process.
+            max_concurrency (int): Maximum number of concurrent Playwright workers.
+        Returns:
+            List[JobOffer]: List of extracted JobOffer objects.
+        """
         sem = asyncio.Semaphore(max_concurrency)
 
-        async def process_url(url) -> JobOffer:
+        async def process_url(url: str) -> Optional[JobOffer]:
+            """
+            Processes a single job offer URL and extracts its details.
+            Args:
+                url (str): Job offer URL.
+            Returns:
+                Optional[JobOffer]: Extracted job offer details or None if not found.
+            """
             async with sem:
-                page = None
-                title = None
+                page: Optional[Page] = None
+                title: Optional[str] = None
                 logger.trace("Scraping data from URL: {}", url)
                 page, title = await self._open_page_and_check_tile(url)
                 try:
@@ -166,22 +248,36 @@ class PageOperationsAsync(ABC):
 
         @dataclass
         class TasksFactory:
+            """
+            Helper class for creating asyncio tasks for job offer processing.
+            """
+
             func: Callable[..., Awaitable]
             args: tuple = field(default_factory=tuple)
             kwargs: dict = field(default_factory=dict)
 
             def start(self) -> Awaitable:
+                """
+                Starts the async function with provided arguments.
+                Returns:
+                    Awaitable: Awaitable object for the async function.
+                """
                 return self.func(*self.args, **self.kwargs)
 
-            def create_task(self):
+            def create_task(self) -> asyncio.Task:
+                """
+                Creates an asyncio task for the async function.
+                Returns:
+                    asyncio.Task: Created asyncio task.
+                """
                 return asyncio.create_task(self.start())
 
-        all_task_creators = [TasksFactory(process_url, (url,)) for url in urls]
+        all_task_creators: List[TasksFactory] = [TasksFactory(process_url, (url,)) for url in urls]
         tasks_mapped = {job.create_task(): job for job in all_task_creators}
-        all_tasks = tasks_mapped.keys()
+        all_tasks = list(tasks_mapped.keys())
         all_tasks_init_len = len(all_tasks)
         counter = 0
-        results = []
+        results: List[JobOffer] = []
         while counter < 1:  # Fixme fix restarting context
             logger.info("Starting {} of collection iteration...", counter + 1)
             done, pending = await asyncio.wait(all_tasks, return_when=asyncio.FIRST_EXCEPTION)
@@ -199,10 +295,6 @@ class PageOperationsAsync(ABC):
                     elif isinstance(e, TargetClosedError):
                         logger.warning("Target closed error. Restarting context")
                     await asyncio.gather(*pending, return_exceptions=True)
-                    # pending.add(task)
-                    # await self.restart_context()
-                    # all_tasks = [TasksFactory(process_url, (tasks_mapped[task].args[0],)).create_task() for task in
-                    #              pending]
                 except Exception as e:
                     logger.critical("Unexpected exception: {}", e)
             counter += 1
@@ -211,7 +303,17 @@ class PageOperationsAsync(ABC):
 
         return results
 
-    async def _open_page_and_check_tile(self, url, check_forbidden_titles=True) -> tuple[Page, str]:
+    async def _open_page_and_check_tile(self, url: str, check_forbidden_titles: bool = True) -> Tuple[Page, str]:
+        """
+        Opens a page and checks its title for forbidden phrases.
+        Args:
+            url (str): URL to open.
+            check_forbidden_titles (bool): Whether to check for forbidden phrases in the title.
+        Returns:
+            Tuple[Page, str]: Tuple of Playwright Page object and page title.
+        Raises:
+            BotManagemenetException: If forbidden phrases are found in the title.
+        """
         page = await self.context.new_page()
         await page.goto(url, wait_until="domcontentloaded", timeout=120_000)
         await page.wait_for_timeout(1000)
@@ -222,8 +324,16 @@ class PageOperationsAsync(ABC):
                 raise BotManagemenetException(f"Forbidden phrase found in page title {title}")
         return page, title
 
-    async def _read_job_descritpion(self, page: Page, retry_attempts: int = 3) -> str:
-        offer_description = None
+    async def _read_job_descritpion(self, page: Page, retry_attempts: int = 3) -> Optional[str]:
+        """
+        Reads the job description from the page, retrying if necessary.
+        Args:
+            page (Page): Playwright page object.
+            retry_attempts (int): Number of retry attempts.
+        Returns:
+            Optional[str]: Extracted job description or None if not found.
+        """
+        offer_description: Optional[str] = None
         for i in range(retry_attempts):
             try:
                 offer_description = await self._job_description_extractor_pattern(page)
@@ -236,12 +346,17 @@ class PageOperationsAsync(ABC):
                 return offer_description
 
     @abstractmethod
-    async def _job_description_extractor_pattern(self, page) -> str:
+    async def _job_description_extractor_pattern(self, page: Page) -> Optional[str]:
         """
-        Extracts job description and tech stack from the page.
+        Abstract method to extract job description and tech stack from the page.
+        Args:
+            page (Page): Playwright page object.
+        Returns:
+            Optional[str]: Extracted job description or None if not found.
         """
-        pass
 
 
 class BotManagemenetException(Exception):
-    pass
+    """
+    Exception raised when bot management or anti-bot measures are detected during scraping.
+    """

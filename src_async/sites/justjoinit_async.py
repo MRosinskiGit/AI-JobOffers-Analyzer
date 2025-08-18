@@ -43,6 +43,7 @@ class JustJoinIt(PageOperationsAsync):
     @logger.catch(reraise=False, default=[])
     async def perform_full_extraction(self):
         urls = await super().extract_jobs_urls(self.url)
+        urls = super().filter_only_not_analyzed_urls(urls)
         if not urls:
             logger.warning("No URLs extracted")
             return []

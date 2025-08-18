@@ -2,25 +2,32 @@ import datetime
 import os
 import os.path
 import sqlite3
-from html import escape
 
 from loguru import logger
-from weasyprint import HTML
 
 from src_common.common_utils import JobOffer
 
 
-class DatabaseManager:
+class Singleton(type):
+    _instances = {}
+
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._instances:
+            cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
+        return cls._instances[cls]
+
+
+class DatabaseManager(metaclass=Singleton):
     def __init__(self, db_file, table_name, rel_path="."):
+        """Initialize the DatabaseManager with the database file."""
         logger.trace("Connecting to database {} with table name {}", db_file, table_name)
         self.table_name = table_name
         if db_path := os.getenv("DB_PATH"):
             self.db_path = os.path.join(db_path, db_file)
         else:
             self.db_path = os.path.join(rel_path, db_file)
-        """Initialize the DatabaseManager with the database file."""
         logger.trace("Database path: {}", self.db_path)
-        self.conn = sqlite3.connect(self.db_path)
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.create_jobs_database()
         logger.trace(f"Database connected: {self.db_path}")
 
@@ -156,29 +163,3 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error generating report: {e}")
             return False
-
-    @logger.catch()
-    def generate_report_pdf(self, jobs, output_path="./reports") -> bool:
-        os.makedirs(output_path, exist_ok=True)
-        pdf_file = os.path.join(output_path, f"report_{datetime.datetime.now():%Y%m%d_%H%M%S}.pdf")
-        # ruff: noqa: E501 off
-        parts = [
-            "<html><head><meta charset='utf-8'><title>Job Offers Report</title>",
-            "<style>table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:4px;font-size:12px}th{background:#2F5597;color:#fff}</style>",
-            "</head><body><h1>Job Offers Report</h1><table>",
-            "<tr><th>ID</th><th>Source</th><th>Name</th><th>URL</th><th>Description</th><th>Analysis</th><th>Offer Rating</th><th>Candidate Rating</th><th>Added Date</th></tr>",
-        ]
-        # ruff: noqa: E501 on
-        for job in jobs:
-            parts.append("<tr>")
-            for idx, item in enumerate(job):
-                val = "" if item is None else escape(str(item))
-                if idx == 3 and val:
-                    parts.append(f"<td><a href='{val}'>{val}</a></td>")
-                else:
-                    parts.append(f"<td>{val}</td>")
-            parts.append("</tr>")
-        parts.append("</table></body></html>")
-
-        HTML(string="".join(parts)).write_pdf(pdf_file)
-        return True

@@ -1,162 +1,34 @@
 # ruff : noqa: E501
-import asyncio
-import concurrent.futures
 import datetime
-import json
 import os
-import re
 import sys
-import threading
 
 from dotenv import load_dotenv
-from json_repair import repair_json
 from loguru import logger
-from openai import OpenAI
 
-from database import DatabaseManager
 from src_async.scraping_async import extract_all_jobs
-from src_common.common_utils import JobOffer, configure_logger, global_config
+from src_common.ai_analyzer import AIAnalyzer
+from src_common.common_utils import configure_logger
+from src_common.database import DatabaseManager
 
 configure_logger("logs/log_async_main_{time}.log")
 
+logger.info("Loading environment variables...")
 load_dotenv()
-logger.info("Initializing OpenAI model with API key from environment variable.")
-model = OpenAI(api_key=os.getenv("DEEPSEEK_API"), base_url="https://api.deepseek.com")
 
+logger.info("Starting async job extraction...")
+all_jobs = extract_all_jobs()
 
-def extract_ratings(response):
-    if isinstance(response, dict):
-        return (
-            response.get("ocena_oferty", 0),
-            response.get("dopasowanie_kandydata", 0),
-        )
-    match = re.search(r"\[ocena_oferty=(\d+)", response)
-    if match:
-        return int(match.group(1)), None
-    return None, None
+logger.info("Request jobs analysis...")
+AIAnalyzer(api_key=os.getenv("DEEPSEEK_API"), base_url="https://api.deepseek.com").request_jobs_ai_analyze(all_jobs)
 
-
-def clean_deepseek_response(response):
-    cleaned = re.sub(r"<think>.*?</think>\s*", "", response, flags=re.DOTALL)
-    # extract the JSON part
-    json_match = re.search(r"\{.*?\}", cleaned, flags=re.DOTALL)
-    if json_match:
-        cleaned = json_match.group(0)
-        cleaned = repair_json(cleaned)
-        try:
-            return json.loads(cleaned)
-        except json.JSONDecodeError as e:
-            logger.error("JSON decoding error: {}", e)
-            logger.error("Response content: {}", cleaned)
-            return cleaned
-    else:
-        logger.error("No valid JSON found in the response")
-        return cleaned
-
-
-DB_NAME = "jobs.db"
-TABLE_NAME = "job_offers_api"
-RELPATH = "./db"
-db = DatabaseManager(DB_NAME, TABLE_NAME, RELPATH)
-
-all_jobs = asyncio.run(extract_all_jobs())
-
-
-def build_prompt(job: JobOffer):
-    return [
-        {  # rdzeń: tylko JSON PL
-            "role": "system",
-            "content": (
-                "Jesteś narzędziem do oceny dopasowania ofert pracy IT. "
-                "Zwracasz WYŁĄCZNIE poprawny JSON w UTF-8, bez markdownu i bez wyjaśniania rozumowania. "
-                "Odpowiadasz po polsku."
-            ),
-        },
-        {  # schema i definicje
-            "role": "system",
-            "content": (
-                "Wyjście — dokładnie taki JSON:\n"
-                '{ "ocena_oferty": <int 0-100>, '
-                '"dopasowanie_kandydata": <int 0-100>, '
-                '"techstack": ["...", "..."], '
-                '"braki": ["...", "..."], '
-                '"opinia": "max 5 krótkich zdań" }\n'
-                "techstack: 1–20 unikalnych technologii z ogłoszenia, małymi literami; "
-                "braki: wymagania z ogłoszenia, których kandydat nie spełnia."
-            ),
-        },
-        {  # profil kandydata (skondensowany)
-            "role": "system",
-            "content": (os.getenv("PROFILE")),
-        },
-        {  # normalizacja/synonimy
-            "role": "system",
-            "content": (
-                "Normalizacja techstack (zapisuj małymi literami): "
-                '"azure devops pipelines|azure pipelines|ado pipelines|azure devops ci/cd"→"azure devops"; '
-                '"qa automation|sdet|automated testing"→"test automation"; '
-                '"http api|web api"→"rest api"; '
-                '"hardware-in-the-loop|software-in-the-loop"→"hil/sil"; '
-                '"python backend|python scripting"→"python"; '
-                '"continuous integration|continuous delivery"→"ci/cd".'
-            ),
-        },
-        {  # scoring i reguły (skrócone)
-            "role": "system",
-            "content": (os.getenv("EXPECTATIONS")),
-        },
-        {  # wejście użytkownika
-            "role": "user",
-            "content": f"Pełny tekst ogłoszenia dla {job.url}:\n{job.description}",
-        },
-    ]
-
-
-def process_job(data):
-    db = DatabaseManager(DB_NAME, TABLE_NAME, RELPATH)
-    if len(db.search_jobs(data)) != 0:
-        logger.warning("Job already exists in the database: {}, SKIPPING", data.name)
-        return
-    logger.info("Processing job: {}", data.name)
-    response = model.chat.completions.create(
-        model="deepseek-reasoner",
-        messages=build_prompt(data),
-        temperature=0.0,
-        top_p=1.0,
-        max_tokens=10000,
-        response_format={"type": "json_object"},
-    )
-
-
-    logger.success("Response for URL: {}", data.url)
-    logger.debug(response.choices[0].message.content)
-    response_formatted = clean_deepseek_response(str(response.choices[0].message.content))
-    offer_rating, candidate_rating = extract_ratings(response_formatted)
-    data.analysis = str(response_formatted)
-    if offer_rating:
-        data.offer_rating = offer_rating
-    if candidate_rating:
-        data.candidate_rating = candidate_rating
-    with db_access_lock:
-        db.insert_job_offer(data)
-    return data
-
-
-db_access_lock = threading.Lock()
-with concurrent.futures.ThreadPoolExecutor(max_workers=global_config["MAX_REQUESTS_WORKERS"]) as executor:
-    all_futures = {executor.submit(process_job, data): data for data in all_jobs}
-    for future in concurrent.futures.as_completed(all_futures):
-        res = all_futures[future]
-        try:
-            data = future.result()
-        except Exception as exc:
-            logger.error("Job processing generated an exception for {}: {}", res, exc)
-    else:
-        logger.success("All jobs processed and stored in the database")
 
 logger.info("Extracting jobs for today...")
+DB_NAME = os.getenv("DB_NAME")
+TABLE_NAME = os.getenv("TABLE_NAME")
+RELPATH = os.getenv("RELPATH")
+db = DatabaseManager(DB_NAME, TABLE_NAME, RELPATH)
 todays_jobs = db.extract_jobs_for_a_date(datetime.date.today())
-
 
 if not todays_jobs:
     logger.warning("No jobs found for today.")
@@ -164,6 +36,3 @@ if not todays_jobs:
 
 logger.info("Generating HTML report for today's jobs...")
 db.generate_report_html(todays_jobs)
-
-logger.info("Generating PDF report for today's jobs...")
-db.generate_report_pdf(todays_jobs)

@@ -60,31 +60,31 @@ class PracujPl(PageOperationsAsync):
         """
 
         loc_expected = page.locator('div[data-scroll-id="technologies-expected-1"]')
-        if await loc_expected.count() == 0:
+        if not await loc_expected.count():
             expected_text = ""
         else:
             expected_text = (await loc_expected.first.inner_text()).replace("\n", " ").replace("  ", " ").strip()
 
         loc_optional = page.locator('div[data-scroll-id="technologies-optional-1"]')
-        if await loc_optional.count() == 0:
+        if not await loc_optional.count():
             optional_text = ""
         else:
             optional_text = (await loc_optional.first.inner_text()).replace("\n", " ").replace("  ", " ").strip()
 
         about_project = page.locator('ul[data-test="text-about-project"]')
-        if await about_project.count() == 0:
+        if not await about_project.count():
             about_project_text = ""
         else:
             about_project_text = await about_project.first.inner_text()
 
         responsibilities = page.locator('section[data-test="section-responsibilities"]')
-        if await responsibilities.count() == 0:
+        if not await responsibilities.count():
             responsibilities_text = ""
         else:
             responsibilities_text = await responsibilities.first.inner_text()
 
         requirements = page.locator('section[data-test="section-requirements"]')
-        if await requirements.count() == 0:
+        if not await requirements.count():
             requirements_text = ""
         else:
             requirements_text = await requirements.first.inner_text()
@@ -103,6 +103,7 @@ class PracujPl(PageOperationsAsync):
             for i in range(1, max_page_number)
         ]
         urls = await super().extract_jobs_urls(urls)
+        urls = super().filter_only_not_analyzed_urls(urls)
         if not urls:
             logger.warning("No URLs extracted")
             return []

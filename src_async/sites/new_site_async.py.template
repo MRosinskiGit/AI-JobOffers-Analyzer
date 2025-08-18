@@ -1,0 +1,74 @@
+import asyncio
+import re
+from urllib.parse import urlparse, urlsplit, urlunsplit
+
+from loguru import logger
+from playwright.async_api import Page, async_playwright
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+
+from src_async.sites.common_async import PageOperationsAsync
+from src_common.common_utils import JobOffer
+
+
+class SiteTemplate(PageOperationsAsync):
+    def __init__(self, browser, url, name="Template"):
+        self.browser = browser
+        self.context = ...
+        self.url = url
+        self.name = name
+        self.cookie_accept_text = "Akceptuj wszystkie"
+        self.headless = False
+        logger.success("Initialized Template Scraper")
+
+
+    async def _url_extractor_pattern(self, page: Page) -> list[str]:
+        """
+        Pattern for data extraction for parents class.
+
+        :param page: Page
+        :return:
+        """
+        urls: list[str] = []
+        return urls
+
+    @logger.catch()
+    async def _job_description_extractor_pattern(self, page) -> None | str:
+        """
+        Pattern for data extraction for parents class.
+        example: searching for locators, extracting text and returning it
+        """
+
+        return f"Job offer descripton"
+
+    @logger.catch(reraise=False, default=[])
+    async def perform_full_extraction(self) -> list[JobOffer]:
+        """
+        Peforms full extraction of job offers from template.
+        :return: list of JobOffer objects with extracted data
+        """
+        url = "Url to extract job offers" or self.url
+        urls = await super().extract_jobs_urls(url)
+        urls = super().filter_only_not_analyzed_urls(urls)
+        if not urls:
+            logger.warning("No URLs extracted")
+            return []
+
+        jobs_data = await super().extract_jobs_details_from_urls(urls)
+        return jobs_data or []
+
+async def extract_asynchronious_pracujpl():
+    async with async_playwright() as p:
+        logger.info("Starting Playwright to extract job URLs from Template...")
+        browser = await p.chromium.launch(headless=False)
+        async with SiteTemplate(
+            browser, r"url_with_job_offers"
+        ) as template:
+            jobs_data = await template.perform_full_extraction()
+            logger.success("Extracted {} job offers from Pracuj.pl", len(jobs_data))
+            return jobs_data
+
+
+if __name__ == "__main__":
+    logger.info("Starting asynchronous extraction of job offers from Template...")
+    x = asyncio.run(extract_asynchronious_pracujpl())
+    logger.success("Finished extracting job offers from Template")

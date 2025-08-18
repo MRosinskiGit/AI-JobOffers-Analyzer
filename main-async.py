@@ -115,7 +115,7 @@ def build_prompt(job: JobOffer):
 def process_job(data):
     db = DatabaseManager(DB_NAME, TABLE_NAME, RELPATH)
     if len(db.search_jobs(data)) != 0:
-        logger.warning("Job already exists in the database: {}", data.name)
+        logger.warning("Job already exists in the database: {}, SKIPPING", data.name)
         return
     logger.info("Processing job: {}", data.name)
     response = model.chat.completions.create(
@@ -126,6 +126,7 @@ def process_job(data):
         max_tokens=10000,
         response_format={"type": "json_object"},
     )
+
 
     logger.success("Response for URL: {}", data.url)
     logger.debug(response.choices[0].message.content)

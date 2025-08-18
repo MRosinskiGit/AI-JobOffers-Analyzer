@@ -12,17 +12,17 @@ from src_common.common_utils import JobOffer
 
 class DatabaseManager:
     def __init__(self, db_file, table_name, rel_path="."):
-        logger.info("Connecting to database {} with table name {}", db_file, table_name)
+        logger.trace("Connecting to database {} with table name {}", db_file, table_name)
         self.table_name = table_name
         if db_path := os.getenv("DB_PATH"):
             self.db_path = os.path.join(db_path, db_file)
         else:
             self.db_path = os.path.join(rel_path, db_file)
         """Initialize the DatabaseManager with the database file."""
-        logger.debug("Database path: {}", self.db_path)
+        logger.trace("Database path: {}", self.db_path)
         self.conn = sqlite3.connect(self.db_path)
         self.create_jobs_database()
-        logger.success(f"Database connected: {self.db_path}")
+        logger.trace(f"Database connected: {self.db_path}")
 
     @logger.catch(reraise=True)
     def create_jobs_database(self):
@@ -80,12 +80,12 @@ class DatabaseManager:
         SELECT * FROM {self.table_name}
         WHERE url LIKE ?
         """
-        logger.info("Looking for job with URL: {}", job_offer.url)
+        logger.trace("Looking for job with URL: {}", job_offer.url)
         try:
             cursor = self.conn.cursor()
             cursor.execute(sql_search_jobs, ("%" + job_offer.url + "%",))
             results = cursor.fetchall()
-            logger.debug("Found matching results: {}", len(results))
+            logger.trace("Found matching results: {}", len(results))
             logger.trace("Search results: {}", results)
             return results
         except sqlite3.Error as e:

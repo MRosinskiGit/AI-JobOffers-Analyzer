@@ -174,7 +174,7 @@ async def extract_asynchronious_pracujpl():
                 return None
             urls = [
                 f"https://it.pracuj.pl/praca/python;kw?sc=0&pn={i}&wm=hybrid%2Chome-office&itth=37"
-                for i in range(1, max_page_number)
+                for i in range(1, max_page_number + 1)
             ]
             offers = await Pracpl.extract_jobs_urls(urls)
             offers = PracujPl.dedupe_pracuj_urls(offers, keep="max_id")

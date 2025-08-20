@@ -174,6 +174,10 @@ class AIAnalyzer:
         with concurrent.futures.ThreadPoolExecutor(max_workers=global_config["MAX_REQUESTS_WORKERS"]) as executor:
             all_futures = {executor.submit(process_job, data): data for data in all_jobs}
             for future in concurrent.futures.as_completed(all_futures):
-                _ = future.result()
+                try:
+                    _ = future.result()
+                except Exception as e:
+                    job = all_futures[future]
+                    logger.exception("Job {} failed with exception: {}", job.name, e)
 
         logger.success("All jobs processed and stored in the database")

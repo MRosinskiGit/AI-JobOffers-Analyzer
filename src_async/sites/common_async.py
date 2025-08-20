@@ -64,7 +64,7 @@ class PageOperationsAsync(ABC):
         loc = page.locator(locator)
         if not await loc.count():
             return ""
-        return await loc.first.inner_text(timeout=2500)
+        return await loc.first.inner_text()
 
     async def restart_context(self) -> None:
         """

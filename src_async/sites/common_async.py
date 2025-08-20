@@ -64,7 +64,11 @@ class PageOperationsAsync(ABC):
         loc = page.locator(locator)
         if not await loc.count():
             return ""
-        return await loc.first.inner_text()
+        try:
+            return await loc.first.inner_text()
+        except PlaywrightTimeoutError:
+            logger.warning("Timeout while extracting text from locator: {}", locator)
+            return ""
 
     async def restart_context(self) -> None:
         """

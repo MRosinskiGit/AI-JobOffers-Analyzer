@@ -4,7 +4,6 @@ from urllib.parse import urlparse, urlsplit, urlunsplit
 
 from loguru import logger
 from playwright.async_api import Page, async_playwright
-from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from src_async.sites.common_async import PageOperationsAsync
 from src_common.common_utils import JobOffer
@@ -28,80 +27,56 @@ class PracujPl(PageOperationsAsync):
         page = await self.context.new_page()
         try:
             await page.goto(self.url)
-            number_of_pages = await page.locator("span[data-test='top-pagination-max-page-number']").inner_text(
-                timeout=10000
+            number_of_pages = await super().extract_text_from_locator(
+                page, "span[data-test='top-pagination-max-page-number']"
             )
             return int(number_of_pages, 10)
-        except PlaywrightTimeoutError:
-            logger.error("Failed to get the maximum page number from Pracuj.pl")
-            return None
         finally:
             await page.close()
 
-    async def _url_extractor_pattern(self, page: Page) -> list[str]:
+    async def url_extractor_pattern(self, page: Page) -> list[str]:
         """
         Pattern for data extraction for parents class.
 
         :param page: Page
         :return:
         """
-        urls = []
-        urls_locs = await page.locator("a[data-test='link-offer']").all()
-        for url in urls_locs:
-            href = await url.get_attribute("href")
-            parts = urlsplit(href)
-            urls.append(urlunsplit((parts.scheme, parts.netloc, parts.path, "", "")))
+        hrefs = await page.locator("a[data-test='link-offer']").evaluate_all(
+            "elements => elements.map(e => e.getAttribute('href'))"
+        )
+
+        urls = [
+            urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+            for href in hrefs
+            if href
+            for parts in [urlsplit(href)]
+        ]
+
         return urls
 
     @logger.catch()
-    async def _job_description_extractor_pattern(self, page) -> None | str:
+    async def job_description_extractor_pattern(self, page) -> None | str:
         """
         Pattern for data extraction for parents class.
         """
 
-        loc_expected = page.locator('div[data-scroll-id="technologies-expected-1"]')
-        if not await loc_expected.count():
-            expected_text = ""
-        else:
-            expected_text = (await loc_expected.first.inner_text()).replace("\n", " ").replace("  ", " ").strip()
+        expected = await super().extract_text_from_locator(page, 'div[data-scroll-id="technologies-expected-1"]')
 
-        loc_optional = page.locator('div[data-scroll-id="technologies-optional-1"]')
-        if not await loc_optional.count():
-            optional_text = ""
-        else:
-            optional_text = (await loc_optional.first.inner_text()).replace("\n", " ").replace("  ", " ").strip()
+        optional = await super().extract_text_from_locator(page, 'div[data-scroll-id="technologies-optional-1"]')
 
-        about_project = page.locator('ul[data-test="text-about-project"]')
-        if not await about_project.count():
-            about_project_text = ""
-        else:
-            about_project_text = await about_project.first.inner_text()
+        about_project = await super().extract_text_from_locator(page, 'ul[data-test="text-about-project"]')
 
-        responsibilities = page.locator('section[data-test="section-responsibilities"]')
-        if not await responsibilities.count():
-            responsibilities_text = ""
-        else:
-            responsibilities_text = await responsibilities.first.inner_text()
+        responsibilities = await super().extract_text_from_locator(
+            page, 'section[data-test="section-responsibilities"]'
+        )
 
-        requirements = page.locator('section[data-test="section-requirements"]')
-        if not await requirements.count():
-            requirements_text = ""
-        else:
-            requirements_text = await requirements.first.inner_text()
+        requirements = await super().extract_text_from_locator(page, 'section[data-test="section-requirements"]')
 
-        offers = page.locator('section[data-test="section-offered"]')
-        if not await offers.count():
-            offers_text = ""
-        else:
-            offers_text = await offers.first.inner_text()
+        offers = await super().extract_text_from_locator(page, 'section[data-test="section-offered"]')
 
-        benefits = page.locator('section[data-test="section-benefits"]')
-        if not await benefits.count():
-            benefits_text = ""
-        else:
-            benefits_text = await benefits.first.inner_text()
+        benefits = await super().extract_text_from_locator(page, 'section[data-test="section-benefits"]')
 
-        return f"{expected_text} {optional_text} {about_project_text} {responsibilities_text} {requirements_text} {offers_text} {benefits_text}"
+        return f"{expected} {optional} {about_project} {responsibilities} {requirements} {offers} {benefits}"
 
     @logger.catch(reraise=False, default=[])
     async def perform_full_extraction(self) -> list[JobOffer]:
@@ -112,7 +87,7 @@ class PracujPl(PageOperationsAsync):
         max_page_number = await self.get_max_page_number()
         urls = [
             f"https://it.pracuj.pl/praca/python;kw?sc=0&pn={i}&wm=hybrid%2Chome-office&itth=37"
-            for i in range(1, max_page_number)
+            for i in range(1, max_page_number + 1)
         ]
         urls = await super().extract_jobs_urls(urls)
         urls = super().filter_only_not_analyzed_urls(urls)
@@ -179,18 +154,8 @@ async def extract_asynchronious_pracujpl():
         browser = await p.chromium.launch(headless=False)
         async with PracujPl(
             browser, r"https://it.pracuj.pl/praca/python;kw?sc=0&wm=hybrid%2Chome-office&itth=37"
-        ) as Pracpl:
-            max_page_number = await Pracpl.get_max_page_number()
-            if not max_page_number:
-                logger.error("Failed to retrieve the maximum page number from Pracuj.pl")
-                return None
-            urls = [
-                f"https://it.pracuj.pl/praca/python;kw?sc=0&pn={i}&wm=hybrid%2Chome-office&itth=37"
-                for i in range(1, max_page_number + 1)
-            ]
-            offers = await Pracpl.extract_jobs_urls(urls)
-            offers = PracujPl.dedupe_pracuj_urls(offers, keep="max_id")
-            jobs_data = await Pracpl.extract_jobs_details_from_urls(offers)
+        ) as pracujpl_scraper:
+            jobs_data = await pracujpl_scraper.perform_full_extraction()
             logger.success("Extracted {} job offers from Pracuj.pl", len(jobs_data))
             return jobs_data
 

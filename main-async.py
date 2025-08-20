@@ -24,10 +24,9 @@ AIAnalyzer(api_key=os.getenv("DEEPSEEK_API"), base_url="https://api.deepseek.com
 
 
 logger.info("Extracting jobs for today...")
-DB_NAME = os.getenv("DB_NAME")
+DB_PATH = os.getenv("DB_PATH")
 TABLE_NAME = os.getenv("TABLE_NAME")
-RELPATH = os.getenv("RELPATH")
-db = DatabaseManager(DB_NAME, TABLE_NAME, RELPATH)
+db = DatabaseManager(DB_PATH, TABLE_NAME)
 todays_jobs = db.extract_jobs_for_a_date(datetime.date.today())
 
 if not todays_jobs:

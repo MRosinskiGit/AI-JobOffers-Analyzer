@@ -3,7 +3,7 @@ import datetime
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Awaitable, Callable, List, Optional, Tuple, Union
+from typing import Awaitable, Callable, Coroutine, List, Optional, Tuple, Union
 
 from loguru import logger
 from playwright._impl._errors import TargetClosedError
@@ -51,6 +51,21 @@ class PageOperationsAsync(ABC):
         if self.context:
             await self.context.close()
 
+    @staticmethod
+    async def extract_text_from_locator(page: Page, locator: str):
+        """
+        Extracts text from a specific locator on the page.
+        If the locator is not found, it returns an empty string.
+        This method is useful for extracting expected text from a page.
+        :param page: Page object to operate on.
+        :param locator: Locator string to find the element.
+        :return:
+        """
+        loc = page.locator(locator)
+        if not await loc.count():
+            return ""
+        return await loc.first.inner_text(timeout=2500)
+
     async def restart_context(self) -> None:
         """
         Restarts the browser context by closing the current context and creating a new one.
@@ -64,21 +79,6 @@ class PageOperationsAsync(ABC):
         finally:
             self.context = await self.browser.new_context()
             logger.success("Context restarted")
-
-    async def scroll_to_the_bottom(self, page: Page, pause_time: int = 2000) -> None:
-        """
-        Scrolls to the bottom of the page, pausing between scrolls.
-        Args:
-            page (Page): Playwright page object.
-            pause_time (int): Time to wait between scrolls in milliseconds.
-        """
-        while True:
-            curr_height = await page.evaluate("window.scrollY")
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            page.wait_for_timeout(pause_time)
-            new_height = await page.evaluate("window.scrollY")
-            if new_height == curr_height:
-                break
 
     @staticmethod
     async def scroll_and_collect(
@@ -100,7 +100,7 @@ class PageOperationsAsync(ABC):
             List[str]: List of unique extracted data strings.
         """
         logger.debug("Starting scroll and collect operation")
-        scrollstart = 0
+        scroll_start = 0
         extracted_data: List[str] = []
         while True:
             curr_height = await page.evaluate("window.scrollY")
@@ -112,9 +112,9 @@ class PageOperationsAsync(ABC):
                 else:
                     logger.warning("No searched element ", await el.inner_text())
                     logger.debug("Element details: {}", await el.inner_html())
-            await page.evaluate(f"window.scrollTo({scrollstart}, {scrollstart + scroll_by})")
+            await page.evaluate(f"window.scrollTo({scroll_start}, {scroll_start + scroll_by})")
             await page.wait_for_timeout(wait_between)
-            scrollstart += scroll_by
+            scroll_start += scroll_by
             new_height = await page.evaluate("window.scrollY")
             if new_height <= curr_height:
                 logger.debug("Reached the end of the page or no new elements found")
@@ -135,10 +135,11 @@ class PageOperationsAsync(ABC):
         semaphore = asyncio.Semaphore(global_config["MAX_ASYNC_PLAYWRIGHT_WORKERS"])
         if isinstance(url, str):
             url = [url]
+        logger.info("Starting extraction of job URLs from {} pages", len(url))
 
         async def __extract_urls(__url: str) -> Optional[List[str]]:
             async with semaphore:
-                logger.info("Extracting Job Offers URLs from {}", __url)
+                logger.trace("Extracting Job Offers URLs from {}", __url)
                 page = await self.context.new_page()
                 try:
                     await page.goto(__url, timeout=120_000)
@@ -147,7 +148,7 @@ class PageOperationsAsync(ABC):
                     except PlaywrightTimeoutError:
                         pass
                     await page.wait_for_timeout(1500)
-                    urls = await self._url_extractor_pattern(page)
+                    urls = await self.url_extractor_pattern(page)
                     logger.success("Extracted {} job URLs", len(urls))
                     return urls
                 except Exception as e:
@@ -155,18 +156,19 @@ class PageOperationsAsync(ABC):
                 finally:
                     await page.close()
 
-        results = await asyncio.gather(*(__extract_urls(u) for u in url), return_exceptions=True)
+        all_tasks = [__extract_urls(u) for u in url]
+        results = await asyncio.gather(*all_tasks, return_exceptions=True)
         urls: List[str] = []
         for r in results:
             if isinstance(r, Exception):
                 logger.error("Failed to extract URLs: {}", r)
             elif isinstance(r, list):
                 urls.extend(r)
-        logger.info("Finished extracting job URLs. Total: {}", len(urls))
+        logger.success("Finished extracting job URLs. Total: {}", len(urls))
         return urls
 
     @abstractmethod
-    async def _url_extractor_pattern(self, page: Page) -> List[str]:
+    async def url_extractor_pattern(self, page: Page) -> List[str]:
         """
         Abstract method to extract list of job URLs from a page.
         Args:
@@ -175,7 +177,8 @@ class PageOperationsAsync(ABC):
             List[str]: List of job URLs extracted from the page.
         """
 
-    def filter_only_not_analyzed_urls(self, urls: List[str]) -> List[str]:
+    @staticmethod
+    def filter_only_not_analyzed_urls(urls: List[str]) -> List[str]:
         """
         Filters out URLs that have already been analyzed.
         This method should be implemented in subclasses to provide specific filtering logic.
@@ -183,10 +186,9 @@ class PageOperationsAsync(ABC):
             List[str]: List of URLs that have not been analyzed yet.
         """
         logger.info("Filtering URLs that have not been analyzed yet")
-        DB_NAME = os.getenv("DB_NAME")
+        DB_PATH = os.getenv("DB_PATH")
         TABLE_NAME = os.getenv("TABLE_NAME")
-        RELPATH = os.getenv("RELPATH")
-        db = DatabaseManager(DB_NAME, TABLE_NAME, RELPATH)
+        db = DatabaseManager(DB_PATH, TABLE_NAME)
         filtered_urls: List[str] = []
         for url in urls:
             job_obj = JobOffer(
@@ -213,6 +215,7 @@ class PageOperationsAsync(ABC):
         Returns:
             List[JobOffer]: List of extracted JobOffer objects.
         """
+        logger.info("Starting extraction of job details from {} URLs for {}", len(urls), self.name)
         sem = asyncio.Semaphore(max_concurrency)
 
         async def process_url(url: str) -> Optional[JobOffer]:
@@ -224,12 +227,10 @@ class PageOperationsAsync(ABC):
                 Optional[JobOffer]: Extracted job offer details or None if not found.
             """
             async with sem:
-                page: Optional[Page] = None
-                title: Optional[str] = None
                 logger.trace("Scraping data from URL: {}", url)
                 page, title = await self._open_page_and_check_tile(url)
                 try:
-                    offer_description = await self._read_job_descritpion(page)
+                    offer_description = await self._read_job_description(page)
                     if not offer_description:
                         logger.warning("No job description found for URL: {}", url)
                         return None
@@ -256,11 +257,11 @@ class PageOperationsAsync(ABC):
             args: tuple = field(default_factory=tuple)
             kwargs: dict = field(default_factory=dict)
 
-            def start(self) -> Awaitable:
+            def start(self) -> Coroutine:
                 """
                 Starts the async function with provided arguments.
                 Returns:
-                    Awaitable: Awaitable object for the async function.
+                    Coroutine: Awaitable object for the async function.
                 """
                 return self.func(*self.args, **self.kwargs)
 
@@ -279,7 +280,7 @@ class PageOperationsAsync(ABC):
         counter = 0
         results: List[JobOffer] = []
         while counter < 1:  # Fixme fix restarting context
-            logger.info("Starting {} of collection iteration...", counter + 1)
+            # logger.info("Starting {} of collection iteration...", counter + 1)
             done, pending = await asyncio.wait(all_tasks, return_when=asyncio.FIRST_EXCEPTION)
             for task in done:
                 try:
@@ -287,10 +288,10 @@ class PageOperationsAsync(ABC):
                         logger.warning("None returned by {}", tasks_mapped[task])
                         continue
                     results.append(task.result())
-                except (BotManagemenetException, TargetClosedError) as e:
+                except (self.BotManagemenetException, TargetClosedError) as e:
                     for task_unfinished in pending:
                         task_unfinished.cancel()
-                    if isinstance(e, BotManagemenetException):
+                    if isinstance(e, self.BotManagemenetException):
                         logger.warning("Bot management detected. Restarting context")
                     elif isinstance(e, TargetClosedError):
                         logger.warning("Target closed error. Restarting context")
@@ -300,7 +301,6 @@ class PageOperationsAsync(ABC):
             counter += 1
             if all_tasks_init_len == len(results):
                 logger.success("Collecting done. Collected: {} out of {}", len(results), all_tasks_init_len)
-
         return results
 
     async def _open_page_and_check_tile(self, url: str, check_forbidden_titles: bool = True) -> Tuple[Page, str]:
@@ -321,10 +321,10 @@ class PageOperationsAsync(ABC):
         if check_forbidden_titles:
             if any([phrase.lower() in title.lower() for phrase in ["Access denied", "used Cloudflare to"]]):
                 logger.critical("Forbidden phrase found in page title {}", title)
-                raise BotManagemenetException(f"Forbidden phrase found in page title {title}")
+                raise self.BotManagemenetException(f"Forbidden phrase found in page title {title}")
         return page, title
 
-    async def _read_job_descritpion(self, page: Page, retry_attempts: int = 3) -> Optional[str]:
+    async def _read_job_description(self, page: Page, retry_attempts: int = 3) -> Optional[str]:
         """
         Reads the job description from the page, retrying if necessary.
         Args:
@@ -336,17 +336,16 @@ class PageOperationsAsync(ABC):
         offer_description: Optional[str] = None
         for i in range(retry_attempts):
             try:
-                offer_description = await self._job_description_extractor_pattern(page)
+                offer_description = await self.job_description_extractor_pattern(page)
             except PlaywrightTimeoutError:
                 if i != retry_attempts - 1:
                     logger.debug("No job description found. Retrying ({}/{})...", i + 1, retry_attempts)
                     await page.reload(wait_until="domcontentloaded", timeout=60_000)
                     await page.wait_for_timeout(1000)
-            if offer_description:
-                return offer_description
+            return offer_description
 
     @abstractmethod
-    async def _job_description_extractor_pattern(self, page: Page) -> Optional[str]:
+    async def job_description_extractor_pattern(self, page: Page) -> Optional[str]:
         """
         Abstract method to extract job description and tech stack from the page.
         Args:
@@ -355,8 +354,7 @@ class PageOperationsAsync(ABC):
             Optional[str]: Extracted job description or None if not found.
         """
 
-
-class BotManagemenetException(Exception):
-    """
-    Exception raised when bot management or anti-bot measures are detected during scraping.
-    """
+    class BotManagemenetException(Exception):
+        """
+        Exception raised when bot management or anti-bot measures are detected during scraping.
+        """

@@ -112,10 +112,9 @@ class AIAnalyzer:
         db_access_lock = threading.Lock()
 
         def process_job(data):
-            DB_NAME = os.getenv("DB_NAME")
+            DB_PATH = os.getenv("DB_PATH")
             TABLE_NAME = os.getenv("TABLE_NAME")
-            RELPATH = os.getenv("RELPATH")
-            db = DatabaseManager(DB_NAME, TABLE_NAME, RELPATH)
+            db = DatabaseManager(DB_PATH, TABLE_NAME)
             if len(db.search_jobs(data)) != 0:
                 logger.warning("Job already exists in the database: {}, SKIPPING", data.name)
                 return

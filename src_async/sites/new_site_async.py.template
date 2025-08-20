@@ -21,7 +21,7 @@ class SiteTemplate(PageOperationsAsync):
         logger.success("Initialized Template Scraper")
 
 
-    async def _url_extractor_pattern(self, page: Page) -> list[str]:
+    async def url_extractor_pattern(self, page: Page) -> list[str]:
         """
         Pattern for data extraction for parents class.
 
@@ -32,7 +32,7 @@ class SiteTemplate(PageOperationsAsync):
         return urls
 
     @logger.catch()
-    async def _job_description_extractor_pattern(self, page) -> None | str:
+    async def job_description_extractor_pattern(self, page) -> None | str:
         """
         Pattern for data extraction for parents class.
         example: searching for locators, extracting text and returning it

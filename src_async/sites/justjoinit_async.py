@@ -18,13 +18,13 @@ class JustJoinIt(PageOperationsAsync):
         self.headless = False  # Set to True for headless mode
         logger.success("Initialized JustJoinIt Scraper for name: {}, url: {}", self.name, self.url)
 
-    async def _url_extractor_pattern(self, page):
+    async def url_extractor_pattern(self, page):
         urls_parts = await super().scroll_and_collect(
             page, collect_locator="a.offer-card", extraction_data_fun=lambda el: el.get_attribute("href")
         )
         return [self.core + url_part for url_part in urls_parts if url_part is not None]
 
-    async def _job_description_extractor_pattern(self, page) -> None | str:
+    async def job_description_extractor_pattern(self, page) -> None | str:
         """
         Extracts job description and tech stack from the page.
         """

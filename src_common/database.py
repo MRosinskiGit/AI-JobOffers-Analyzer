@@ -18,18 +18,25 @@ class Singleton(type):
 
 
 class DatabaseManager(metaclass=Singleton):
-    def __init__(self, db_file, table_name, rel_path="."):
+    def __init__(self, db_path, table_name, ):
         """Initialize the DatabaseManager with the database file."""
-        logger.trace("Connecting to database {} with table name {}", db_file, table_name)
+        logger.trace("Connecting to database {} with table name {}", db_path, table_name)
         self.table_name = table_name
-        if db_path := os.getenv("DB_PATH"):
-            self.db_path = os.path.join(db_path, db_file)
-        else:
-            self.db_path = os.path.join(rel_path, db_file)
+        self.db_path = db_path
         logger.trace("Database path: {}", self.db_path)
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.create_jobs_database()
         logger.trace(f"Database connected: {self.db_path}")
+
+    def __enter__(self):
+        """Enter the runtime context related to this object."""
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        """Exit the runtime context related to this object."""
+        if self.conn:
+            self.conn.close()
+            logger.trace("Database connection closed.")
 
     @logger.catch(reraise=True)
     def create_jobs_database(self):

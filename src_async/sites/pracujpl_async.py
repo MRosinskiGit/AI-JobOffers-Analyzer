@@ -119,7 +119,7 @@ class PracujPl(PageOperationsAsync):
         return (host, core_path), offer_id
 
     @staticmethod
-    def dedupe_pracuj_urls(urls, keep="first"):
+    def dedupe_pracuj_urls(urls, keep="first") -> list[str]:
         """
         Remove all dusplicated URLs from the list, keeping only the first or last occurrence
         example:
@@ -148,7 +148,11 @@ class PracujPl(PageOperationsAsync):
         return [v[1] for v in sorted(selected.values(), key=lambda t: t[0])]
 
 
-async def extract_asynchronious_pracujpl():
+async def extract_asynchronious_pracujpl() -> list[JobOffer]:
+    """
+    Extracts job offers from Pracuj.pl using Playwright asynchronously.
+    :return: list of JobOffer objects with extracted data
+    """
     async with async_playwright() as p:
         logger.info("Starting Playwright to extract job URLs from Pracuj.pl...")
         browser = await p.chromium.launch(headless=False)

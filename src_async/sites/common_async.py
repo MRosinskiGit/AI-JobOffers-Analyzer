@@ -22,18 +22,10 @@ class PageOperationsAsync(ABC):
     """
 
     cookie_accept_text: str = "Accept All"
-
-    def __init__(self, browser: Browser, name: str) -> None:
-        """
-        Initialize the PageOperationsAsync instance.
-        Args:
-            browser (Browser): Playwright browser instance.
-            name (str): Name of the job site/source.
-        """
-        self.browser: Browser = browser
-        self.context: BrowserContext = ...
-        self.page: Page = ...
-        self.name: str = name
+    browser: Browser = None
+    context: BrowserContext = None
+    page: Page = None
+    name: str = None
 
     async def __aenter__(self) -> "PageOperationsAsync":
         """
@@ -65,7 +57,7 @@ class PageOperationsAsync(ABC):
         if not await loc.count():
             return ""
         try:
-            return await loc.first.inner_text()
+            return simplify_text(await loc.first.inner_text())
         except PlaywrightTimeoutError:
             logger.warning("Timeout while extracting text from locator: {}", locator)
             return ""
@@ -141,6 +133,7 @@ class PageOperationsAsync(ABC):
             url = [url]
         logger.info("Starting extraction of job URLs from {} pages", len(url))
 
+        @logger.catch(reraise=False, default=[])
         async def __extract_urls(__url: str) -> Optional[List[str]]:
             async with semaphore:
                 logger.trace("Extracting Job Offers URLs from {}", __url)
@@ -155,8 +148,6 @@ class PageOperationsAsync(ABC):
                     urls = await self.url_extractor_pattern(page)
                     logger.success("Extracted {} job URLs", len(urls))
                     return urls
-                except Exception as e:
-                    logger.exception(f"Unexpected exception during extracting URLs: {e}")
                 finally:
                     await page.close()
 
@@ -202,7 +193,7 @@ class PageOperationsAsync(ABC):
                 url=url,
                 description="",
             )
-            if not len(db.search_jobs(job_obj)):
+            if not db.search_jobs(job_obj):
                 filtered_urls.append(job_obj.url)
         logger.success("Filtered URLs. Total: {} out of {}", len(filtered_urls), len(urls))
         return filtered_urls
@@ -300,8 +291,6 @@ class PageOperationsAsync(ABC):
                     elif isinstance(e, TargetClosedError):
                         logger.warning("Target closed error. Restarting context")
                     await asyncio.gather(*pending, return_exceptions=True)
-                except Exception as e:
-                    logger.critical("Unexpected exception: {}", e)
             counter += 1
             if all_tasks_init_len == len(results):
                 logger.success("Collecting done. Collected: {} out of {}", len(results), all_tasks_init_len)
@@ -323,7 +312,7 @@ class PageOperationsAsync(ABC):
         await page.wait_for_timeout(1000)
         title = await page.title()
         if check_forbidden_titles:
-            if any([phrase.lower() in title.lower() for phrase in ["Access denied", "used Cloudflare to"]]):
+            if any(phrase.lower() in title.lower() for phrase in ["Access denied", "used Cloudflare to"]):
                 logger.critical("Forbidden phrase found in page title {}", title)
                 raise self.BotManagemenetException(f"Forbidden phrase found in page title {title}")
         return page, title

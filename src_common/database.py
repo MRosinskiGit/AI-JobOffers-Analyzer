@@ -2,6 +2,7 @@ import datetime
 import os
 import os.path
 import sqlite3
+from datetime import date
 
 from loguru import logger
 
@@ -18,7 +19,11 @@ class Singleton(type):
 
 
 class DatabaseManager(metaclass=Singleton):
-    def __init__(self, db_path, table_name, ):
+    def __init__(
+        self,
+        db_path,
+        table_name,
+    ):
         """Initialize the DatabaseManager with the database file."""
         logger.trace("Connecting to database {} with table name {}", db_path, table_name)
         self.table_name = table_name
@@ -123,9 +128,13 @@ class DatabaseManager(metaclass=Singleton):
         except sqlite3.Error as e:
             logger.error(f"Error deleting jobs table: {e}")
 
-    from datetime import date, timedelta
-
-    def extract_jobs_for_a_date(self, day: date):
+    def extract_jobs_for_a_date(self, day: date) -> list[tuple]:
+        """
+        Extract jobs from the database for a specific date.
+        :param day: date
+        :return: list of tuples containing job data
+        """
+        logger.info("Extracting jobs for date: {}", day)
         start = f"{day.isoformat()} 00:00:00"
         end = f"{(day + datetime.timedelta(days=1)).isoformat()} 00:00:00"
 
@@ -138,35 +147,39 @@ class DatabaseManager(metaclass=Singleton):
         cur = self.conn.cursor()
         cur.execute(sql, (start, end))
         rows = cur.fetchall()
-        logger.info("Extracted %d jobs for date: %s", len(rows), day)
+        logger.success("Extracted {} jobs for date: {}", len(rows), day)
         return rows
 
-    @logger.catch()
-    def generate_report_html(self, jobs: list[tuple], output_path="./reports") -> bool:
+    @logger.catch(reraise=False, default=False)
+    def generate_report_html(self, jobs: list[tuple], output_path: str = "./reports") -> bool:
+        """
+        Generate an HTML report from the job offers data.
+        :param jobs: list of tuples containing job data. From SQL Server
+        :param output_path: str
+        :return: bool
+        """
+        logger.info("Generating HTML report for job offers...")
         os.makedirs(output_path, exist_ok=True)
         report_file = os.path.join(output_path, f"report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.html")
-        try:
-            with open(report_file, "w", encoding="utf-8") as f:
-                f.write("<html><head><title>Job Offers Report</title></head><body>")
-                f.write("<h1>Job Offers Report</h1>")
-                f.write("<table border='1'>")
-                f.write(
-                    "<tr><th>ID</th><th>Source</th><th>Name</th><th>URL</th>"
-                    "<th>Description</th><th>Analysis</th><th>Offer Rating</th>"
-                    "<th>Candidate Rating</th><th>Added Date</th></tr>"
-                )
 
-                for job in jobs:
-                    f.write("<tr>")
-                    for idx, item in enumerate(job):
-                        if idx == 3:  # Kolumna URL
-                            f.write(f"<td><a href='{item}' target='_blank'>{item}</a></td>")
-                        else:
-                            f.write(f"<td>{item}</td>")
+        with open(report_file, "w", encoding="utf-8") as f:
+            f.write("<html><head><title>Job Offers Report</title></head><body>")
+            f.write("<h1>Job Offers Report</h1>")
+            f.write("<table border='1'>")
+            f.write(
+                "<tr><th>ID</th><th>Source</th><th>Name</th><th>URL</th>"
+                "<th>Description</th><th>Analysis</th><th>Offer Rating</th>"
+                "<th>Candidate Rating</th><th>Added Date</th></tr>"
+            )
 
-                f.write("</table></body></html>")
-            logger.success(f"Report generated successfully: {report_file}")
-            return True
-        except Exception as e:
-            logger.error(f"Error generating report: {e}")
-            return False
+            for job in jobs:
+                f.write("<tr>")
+                for idx, item in enumerate(job):
+                    if idx == 3:  # URL Column
+                        f.write(f"<td><a href='{item}' target='_blank'>{item}</a></td>")
+                    else:
+                        f.write(f"<td>{item}</td>")
+
+            f.write("</table></body></html>")
+        logger.success(f"Report generated successfully: {report_file}")
+        return True

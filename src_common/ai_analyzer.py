@@ -3,10 +3,11 @@ import json
 import os
 import re
 import threading
+from typing import Optional
 
 from json_repair import repair_json
 from loguru import logger
-from openai import OpenAI
+from openai import APIError, AuthenticationError, OpenAI, RateLimitError
 
 from src_common.common_utils import JobOffer, global_config
 from src_common.database import DatabaseManager
@@ -22,6 +23,11 @@ class AIAnalyzer:
 
     @staticmethod
     def build_prompt(job: JobOffer):
+        """
+        Build the prompt for the AI model based on the job offer.
+        :param job:
+        :return:
+        """
         return [
             {  # rdzeń: tylko JSON PL
                 "role": "system",
@@ -76,7 +82,13 @@ class AIAnalyzer:
         ]
 
     @staticmethod
-    def extract_ratings(response):
+    def extract_ratings(response) -> tuple[int | None, int | None]:
+        """
+        Extracts the offer and candidate ratings from the AI response.
+        :param response:
+        :return: tuple with (offer_rating, candidate_rating)
+        None if not found.
+        """
         if isinstance(response, dict):
             return (
                 response.get("ocena_oferty", 0),
@@ -88,7 +100,12 @@ class AIAnalyzer:
         return None, None
 
     @staticmethod
-    def clean_deepseek_response(response):
+    def clean_deepseek_response(response: str) -> dict | str:
+        """
+        Cleans the response from the DeepSeek model to extract the JSON part.
+        :param response: Response string from the AI model.
+        :return: dict with parsed JSON or cleaned string if JSON is not found.
+        """
         cleaned = re.sub(r"<think>.*?</think>\s*", "", response, flags=re.DOTALL)
         # extract the JSON part
         json_match = re.search(r"\{.*?\}", cleaned, flags=re.DOTALL)
@@ -111,28 +128,41 @@ class AIAnalyzer:
         """
         db_access_lock = threading.Lock()
 
-        def process_job(data):
+        def process_job(data: JobOffer) -> Optional[JobOffer]:
+            """
+            Process a single job offer by sending it to the AI model for analysis.
+            :param data: JobOffer object containing job details.
+            :return: JobOffer object with analysis and ratings or None if the job already exists in the database.
+            """
             DB_PATH = os.getenv("DB_PATH")
             TABLE_NAME = os.getenv("TABLE_NAME")
             db = DatabaseManager(DB_PATH, TABLE_NAME)
-            if len(db.search_jobs(data)) != 0:
+            if db.search_jobs(data):
                 logger.warning("Job already exists in the database: {}, SKIPPING", data.name)
-                return
+                return None
             logger.info("Processing job: {}", data.name)
-            response = self.model.chat.completions.create(
-                model="deepseek-reasoner",
-                messages=self.build_prompt(data),
-                temperature=0.0,
-                top_p=1.0,
-                max_tokens=10000,
-                response_format={"type": "json_object"},
-            )
+            try:
+                response = self.model.chat.completions.create(
+                    model="deepseek-reasoner",
+                    messages=self.build_prompt(data),
+                    temperature=0.0,
+                    top_p=1.0,
+                    max_tokens=10000,
+                    response_format={"type": "json_object"},
+                )
+            except (AuthenticationError, RateLimitError, APIError) as e:
+                logger.exception("e")
+                raise e
 
             logger.success("Response for URL: {}", data.url)
             logger.debug(response.choices[0].message.content)
+            logger.debug("Used Tokens: {}", response.usage.total_tokens)
             response_formatted = self.clean_deepseek_response(str(response.choices[0].message.content))
             offer_rating, candidate_rating = self.extract_ratings(response_formatted)
             data.analysis = str(response_formatted)
+            if len(data.analysis) < 10:
+                logger.warning("Analysis is too short for job: {}, SKIPPING", data)
+                return None
             if offer_rating:
                 data.offer_rating = offer_rating
             if candidate_rating:
@@ -144,10 +174,6 @@ class AIAnalyzer:
         with concurrent.futures.ThreadPoolExecutor(max_workers=global_config["MAX_REQUESTS_WORKERS"]) as executor:
             all_futures = {executor.submit(process_job, data): data for data in all_jobs}
             for future in concurrent.futures.as_completed(all_futures):
-                res = all_futures[future]
-                try:
-                    _ = future.result()
-                except Exception as exc:
-                    logger.error("Job processing generated an exception for {}: {}", res, exc)
-            else:
-                logger.success("All jobs processed and stored in the database")
+                _ = future.result()
+
+        logger.success("All jobs processed and stored in the database")

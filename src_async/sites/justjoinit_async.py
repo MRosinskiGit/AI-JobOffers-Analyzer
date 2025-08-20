@@ -5,6 +5,7 @@ from playwright.async_api import Browser, BrowserContext, async_playwright
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from src_async.sites.common_async import PageOperationsAsync
+from src_common.common_utils import JobOffer
 
 
 class JustJoinIt(PageOperationsAsync):
@@ -41,7 +42,11 @@ class JustJoinIt(PageOperationsAsync):
             return None
 
     @logger.catch(reraise=False, default=[])
-    async def perform_full_extraction(self):
+    async def perform_full_extraction(self) -> list[JobOffer]:
+        """
+        Performs full extraction of job offers from JustJoinIt.
+        :return: list of JobOffer objects with extracted data
+        """
         urls = await super().extract_jobs_urls(self.url)
         urls = super().filter_only_not_analyzed_urls(urls)
         if not urls:
@@ -51,7 +56,12 @@ class JustJoinIt(PageOperationsAsync):
         return jobs_data or []
 
 
-async def extract_asynchronious_jjit():
+async def extract_asynchronious_jjit() -> list[JobOffer]:
+    """
+    Extracts job offers from JustJoinIt asynchronously.
+    Uses Playwright to navigate and extract job URLs and details.
+    :return: list of JobOffer objects with extracted data
+    """
     async with async_playwright() as p:
         logger.info("Starting Playwright to extract job URLs from JJIT...")
         browser = await p.chromium.launch(headless=False)

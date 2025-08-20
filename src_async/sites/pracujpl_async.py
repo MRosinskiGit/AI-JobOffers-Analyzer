@@ -41,9 +41,9 @@ class PracujPl(PageOperationsAsync):
         :param page: Page
         :return:
         """
-        hrefs = await page.locator("a[data-test='link-offer']").evaluate_all(
-            "elements => elements.map(e => e.getAttribute('href'))"
-        )
+        locators = await page.locator("a[data-test='link-offer']").all()
+
+        hrefs = await asyncio.gather(*(loc.get_attribute("href") for loc in locators))
 
         urls = [
             urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))

@@ -89,7 +89,19 @@ class PracujPl(PageOperationsAsync):
         else:
             requirements_text = await requirements.first.inner_text()
 
-        return f"{expected_text} {optional_text} {about_project_text} {responsibilities_text} {requirements_text}"
+        offers = page.locator('section[data-test="section-offered"]')
+        if not await offers.count():
+            offers_text = ""
+        else:
+            offers_text = await offers.first.inner_text()
+
+        benefits = page.locator('section[data-test="section-benefits"]')
+        if not await benefits.count():
+            benefits_text = ""
+        else:
+            benefits_text = await benefits.first.inner_text()
+
+        return f"{expected_text} {optional_text} {about_project_text} {responsibilities_text} {requirements_text} {offers_text} {benefits_text}"
 
     @logger.catch(reraise=False, default=[])
     async def perform_full_extraction(self) -> list[JobOffer]:

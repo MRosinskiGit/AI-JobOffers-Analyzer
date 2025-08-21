@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable, Coroutine, List, Optional, Tuple, Union
 
+from dotenv import load_dotenv
 from loguru import logger
 from playwright._impl._errors import TargetClosedError
 from playwright.async_api import Browser, BrowserContext, Page
@@ -12,6 +13,8 @@ from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from src_common.common_utils import JobOffer, global_config, simplify_text
 from src_common.database import DatabaseManager
+
+load_dotenv()
 
 
 class PageOperationsAsync(ABC):
@@ -170,6 +173,15 @@ class PageOperationsAsync(ABC):
             page (Page): Async Playwright Page object.
         Returns:
             List[str]: List of job URLs extracted from the page.
+        """
+
+    @abstractmethod
+    async def perform_full_extraction(self) -> List[JobOffer]:
+        """
+        Abstract method to perform full extraction of job offers.
+        This method should be implemented in subclasses to provide specific extraction logic.
+        Returns:
+            List[JobOffer]: List of JobOffer objects with extracted data.
         """
 
     @staticmethod

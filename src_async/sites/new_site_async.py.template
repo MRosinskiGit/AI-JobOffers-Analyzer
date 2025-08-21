@@ -56,7 +56,7 @@ class SiteTemplate(PageOperationsAsync):
         jobs_data = await super().extract_jobs_details_from_urls(urls)
         return jobs_data or []
 
-async def extract_asynchronious_pracujpl():
+async def extract_asynchronious_site():
     async with async_playwright() as p:
         logger.info("Starting Playwright to extract job URLs from Template...")
         browser = await p.chromium.launch(headless=False)
@@ -70,5 +70,5 @@ async def extract_asynchronious_pracujpl():
 
 if __name__ == "__main__":
     logger.info("Starting asynchronous extraction of job offers from Template...")
-    x = asyncio.run(extract_asynchronious_pracujpl())
+    x = asyncio.run(extract_asynchronious_site())
     logger.success("Finished extracting job offers from Template")

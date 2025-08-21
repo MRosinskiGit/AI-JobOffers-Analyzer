@@ -176,7 +176,7 @@ class AIAnalyzer:
             for future in concurrent.futures.as_completed(all_futures):
                 try:
                     _ = future.result()
-                except Exception as e:
+                except (APIError, AuthenticationError, RateLimitError) as e:
                     job = all_futures[future]
                     logger.exception("Job {} failed with exception: {}", job.name, e)
 

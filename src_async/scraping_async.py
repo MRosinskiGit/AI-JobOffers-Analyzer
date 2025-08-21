@@ -4,6 +4,7 @@ from typing import List
 from loguru import logger
 from playwright.async_api import async_playwright
 
+from src_async.sites.hexagon_async import Hexagon
 from src_async.sites.justjoinit_async import JustJoinIt
 from src_async.sites.pracujpl_async import PracujPl
 from src_common.common_utils import JobOffer
@@ -80,6 +81,16 @@ def extract_all_jobs() -> List[JobOffer]:
                         logger.warning(f"Skipping non-JobOffer object: {ppl_job}")
                         continue
                     all_jobs.append(ppl_job)
+
+            # Hexagon
+            url = r"https://hexagon.com/company/careers/job-listings#jl_country=Poland&jl_e=0"
+            async with Hexagon(browser, url) as hexagon:
+                hex_jobs = await hexagon.perform_full_extraction()
+                for hex_job in hex_jobs:
+                    if not isinstance(hex_job, JobOffer):
+                        logger.warning(f"Skipping non-JobOffer object: {hex_job}")
+                        continue
+                    all_jobs.append(hex_job)
 
             logger.success("Finished extracting All jobs.")
             return all_jobs
